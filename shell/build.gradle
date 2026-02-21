@@ -35,6 +35,14 @@ android {
     }
 }
 
+// Disable install tasks — this module is only used to produce rish_shizuku.dex,
+// it should never be installed as a standalone app on a device.
+tasks.configureEach { task ->
+    if (task.name.startsWith('install') || task.name.startsWith('uninstall')) {
+        task.enabled = false
+    }
+}
+
 android.applicationVariants.all { variant ->
     variant.outputs.all {
         def outDir = new File(rootDir, "out")

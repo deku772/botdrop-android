@@ -86,6 +86,15 @@ public class ShizukuRemoteProcess extends Process implements Parcelable {
     }
 
     @Override
+    public boolean waitFor(long timeout, TimeUnit unit) throws InterruptedException {
+        try {
+            return remote.waitForTimeout(timeout, unit.toString());
+        } catch (RemoteException e) {
+            throw new RuntimeException(e);
+        }
+    }
+
+    @Override
     public int exitValue() {
         try {
             return remote.exitValue();

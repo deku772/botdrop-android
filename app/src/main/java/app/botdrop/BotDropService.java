@@ -216,7 +216,9 @@ public class BotDropService extends Service {
     }
 
     private boolean shouldExecuteViaShizuku(String command) {
-        return command != null && !command.isEmpty();
+        // All shell commands run in the Termux environment (local).
+        // Shizuku is only used for binder-level API operations, not shell execution.
+        return false;
     }
 
     private ShizukuShellExecutor.Result executeCommandViaShizuku(String safeCommand, int timeoutMs) {

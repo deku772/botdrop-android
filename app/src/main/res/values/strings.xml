@@ -240,5 +240,6 @@
     <string name="shizuku_single_app_preferences_title">Shizuku (Single App)</string>
     <string name="shizuku_single_app_preferences_summary">Open Shizuku status and manual start controls</string>
     <string name="action_open_shizuku_status">Open Shizuku Home</string>
+    <string name="action_request_shizuku_permission">Check Shizuku Permission</string>
 
 </resources>

@@ -559,16 +559,27 @@
                 android:background="@drawable/botdrop_button_outline_bg"
                 android:textColor="@color/botdrop_accent" />
 
-            <Button
-                android:id="@+id/btn_open_shizuku"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:layout_marginStart="6dp"
-                android:text="@string/action_open_shizuku_status"
-                android:textAllCaps="false"
-                android:background="@drawable/botdrop_button_bg"
-                android:textColor="#1A1A1A" />
+                <Button
+                    android:id="@+id/btn_open_shizuku"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="6dp"
+                    android:text="@string/action_open_shizuku_status"
+                    android:textAllCaps="false"
+                    android:background="@drawable/botdrop_button_bg"
+                    android:textColor="#1A1A1A" />
+
+                <Button
+                    android:id="@+id/btn_request_shizuku_permission"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:layout_marginStart="6dp"
+                    android:text="@string/action_request_shizuku_permission"
+                    android:textAllCaps="false"
+                    android:background="@drawable/botdrop_button_outline_bg"
+                    android:textColor="@color/botdrop_accent" />
         </LinearLayout>
     </LinearLayout>
 </ScrollView>
