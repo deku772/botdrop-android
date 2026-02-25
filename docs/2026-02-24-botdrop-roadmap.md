@@ -15,7 +15,7 @@ P0（当前冲刺）  Shizuku 收尾 + 快速改善（并行推进）
                  │   └─ 集成 sharp 库
                  │
                  ├─ OpenClaw 版本管理（难度低，完成快）
-                 │   ├─ 版本回退/锁定
+                 │   ├─ 历史版本安装
                  │   └─ 兼容性矩阵
                  │
                  └─ 多 IM 接入 + 配置优化（难度低，完成快）
@@ -90,16 +90,43 @@ P3（远期）      商业化
 
 ### B. OpenClaw 版本管理（难度低，完成快）
 
-**问题**：OpenClaw 频繁升级，新版本可能与移植的 Termux 环境不兼容，用户无法回退。
+**问题**：OpenClaw 频繁升级，用户希望能安装历史版本以避免兼容问题。
 
-**方案**：
+**方案**：采用最小实现，仅提供“历史版本选择安装”能力，快速落地：
 
-- Dashboard 增加"OpenClaw 版本管理"入口；
-- 支持查看当前版本、可用版本列表（从 npm registry 或 GitHub Releases 拉取）；
-- 一键安装指定版本：`npm install -g openclaw@x.y.z`；
-- 维护兼容性矩阵（`compatibility.json`）：BotDrop 版本 ↔ OpenClaw 版本范围，升级前给出警告；
-- 升级失败时自动回滚到上一个已知可用版本；
-- 可选：锁定版本功能，防止自动升级覆盖。
+- 在 Dashboard 增加 "OpenClaw 版本管理" 入口；
+- 显示当前已安装版本；
+- 拉取可安装版本列表（优先从 `npm view openclaw versions --json`）；
+- 允许用户选择历史版本并一键安装：`npm install -g openclaw@x.y.z`；
+- 安装后刷新版本显示。
+
+#### 2 小时可交付版（最小任务）
+
+1) 视图与入口（约 35 分钟）
+- [ ] `DashboardActivity` 新增“OpenClaw 版本管理”按钮（复用现有 `openclaw_version_text` 位置）。
+- [ ] 弹出版本选择弹窗（`AlertDialog`/`BottomSheet` 均可），显示：标题、`loading`、`错误重试`、版本列表。
+- [ ] 在 `activity_botdrop_dashboard.xml` 增加/复用按钮容器（不改现有交互流程）。
+
+2) 版本数据与安装（约 50 分钟）
+- [ ] 新建一个小工具方法读取版本列表：
+  - 优先执行 `npm view openclaw versions --json`；
+  - 解析后按 semver 降序展示；
+  - 失败时 fallback 到 `["openclaw@latest", 当前已安装版本]`。
+- [ ] 点击版本项时弹出确认文案：`将安装 openclaw@x.y.z`。
+- [ ] 使用 `BotDropService.updateOpenclaw("openclaw@x.y.z")` 执行安装。
+- [ ] 安装过程中复用现有 `dialog_openclaw_update` 进度弹窗显示进度。
+
+3) 收口与防抖（约 20 分钟）
+- [ ] 防止重复点击：安装按钮并发保护（点击禁用/状态锁）。
+- [ ] 成功后更新 `openclaw_version_text` 与状态提示。
+- [ ] 统一错误提示文案（安装失败 / 版本列表失败 / 无可用版本）。
+- [ ] 与现有 OpenClaw 更新弹窗冲突检查：避免同时打开两个弹窗（必要时禁用刷新触发）。
+
+- 验收标准（最小）
+  - [ ] 用户可打开 Dashboard -> OpenClaw 版本管理 -> 看到历史版本列表；
+  - [ ] 用户可点任意版本并触发安装；
+  - [ ] 安装成功后版本文本更新为新版本；
+  - [ ] 失败时有明确错误提示，不会导致 Dashboard 卡死。
 
 ### C. 多 IM 接入 + 配置优化（难度低，完成快）
 

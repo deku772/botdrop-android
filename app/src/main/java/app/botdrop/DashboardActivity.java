@@ -95,6 +95,7 @@ public class DashboardActivity extends Activity {
     private static final int GATEWAY_DEBUG_LOG_TAIL_LINES = 120;
     private static final int OPENCLAW_WEB_UI_REACHABILITY_RETRY_COUNT = 8;
     private static final int OPENCLAW_WEB_UI_REACHABILITY_RETRY_DELAY_MS = 700;
+    // Version management constants moved to OpenclawVersionUtils
     private static final String OPENCLAW_DASHBOARD_COMMAND = "openclaw dashboard --no-open 2>&1";
     private static final String OPENCLAW_GATEWAY_PRECHECK_COMMAND = "openclaw --version";
     private static final int OPENCLAW_DEFAULT_WEB_UI_PORT = 18789;
@@ -147,7 +148,10 @@ public class DashboardActivity extends Activity {
     private View mStatusIndicator;
     private TextView mTelegramStatus;
     private TextView mDiscordStatus;
+    private TextView mFeishuStatus;
     private View mTelegramChannelRow;
+    private View mDiscordChannelRow;
+    private View mFeishuChannelRow;
     private Button mStartButton;
     private Button mStopButton;
     private Button mRestartButton;
@@ -169,9 +173,11 @@ public class DashboardActivity extends Activity {
     private ImageButton mBackToAgentSelectionButton;
     private String mOpenclawLatestUpdateVersion;
     private AlertDialog mOpenclawUpdateDialog;
+    private AlertDialog mOpenclawVersionManagerDialog;
     private boolean mOpenclawManualCheckRequested;
     private boolean mUiVisible = true;
     private boolean mOpenclawWebUiOpening;
+    private boolean mOpenclawVersionActionInProgress;
 
     private BotDropService mBotDropService;
     private boolean mBound = false;
@@ -251,6 +257,7 @@ public class DashboardActivity extends Activity {
 
             // Check for OpenClaw updates
             checkOpenclawUpdate();
+
         }
 
         @Override
@@ -275,7 +282,10 @@ public class DashboardActivity extends Activity {
         mStatusIndicator = findViewById(R.id.status_indicator);
         mTelegramStatus = findViewById(R.id.telegram_status);
         mDiscordStatus = findViewById(R.id.discord_status);
+        mFeishuStatus = findViewById(R.id.feishu_status);
         mTelegramChannelRow = findViewById(R.id.telegram_channel_row);
+        mDiscordChannelRow = findViewById(R.id.discord_channel_row);
+        mFeishuChannelRow = findViewById(R.id.feishu_channel_row);
         mStartButton = findViewById(R.id.btn_start);
         mStopButton = findViewById(R.id.btn_stop);
         mRestartButton = findViewById(R.id.btn_restart);
@@ -334,7 +344,19 @@ public class DashboardActivity extends Activity {
             mOpenclawRestoreButton.setOnClickListener(v -> restoreOpenclawConfigFromSdcard());
         }
         if (mTelegramChannelRow != null) {
-            mTelegramChannelRow.setOnClickListener(v -> openTelegramChannelConfig());
+            mTelegramChannelRow.setOnClickListener(
+                v -> openChannelConfig(ChannelConfigMeta.PLATFORM_TELEGRAM)
+            );
+        }
+        if (mDiscordChannelRow != null) {
+            mDiscordChannelRow.setOnClickListener(
+                v -> openChannelConfig(ChannelConfigMeta.PLATFORM_DISCORD)
+            );
+        }
+        if (mFeishuChannelRow != null) {
+            mFeishuChannelRow.setOnClickListener(
+                v -> openChannelConfig(ChannelConfigMeta.PLATFORM_FEISHU)
+            );
         }
 
         // Load channel info
@@ -365,6 +387,7 @@ public class DashboardActivity extends Activity {
         if (stored != null) {
             showUpdateBanner(stored[0], stored[1]);
         }
+
     }
 
     private void openAgentSelection() {
@@ -384,6 +407,10 @@ public class DashboardActivity extends Activity {
         mStatusRefreshRunnable = null;
 
         dismissOpenclawUpdateDialog();
+        if (mOpenclawVersionManagerDialog != null && mOpenclawVersionManagerDialog.isShowing()) {
+            mOpenclawVersionManagerDialog.dismiss();
+        }
+        mOpenclawVersionManagerDialog = null;
         
         // Unbind from service
         if (mBound) {
@@ -411,6 +438,7 @@ public class DashboardActivity extends Activity {
             startStatusRefresh();
             refreshStatus();
         }
+        loadChannelInfo();
     }
 
     @Override
@@ -1295,9 +1323,12 @@ public class DashboardActivity extends Activity {
         }
     }
 
-    private void openTelegramChannelConfig() {
+    private void openChannelConfig(String platform) {
         Intent intent = new Intent(this, SetupActivity.class);
         intent.putExtra(SetupActivity.EXTRA_START_STEP, SetupActivity.STEP_CHANNEL);
+        if (!TextUtils.isEmpty(platform)) {
+            intent.putExtra(SetupActivity.EXTRA_CHANNEL_PLATFORM, platform);
+        }
         startActivity(intent);
     }
 
@@ -1330,6 +1361,10 @@ public class DashboardActivity extends Activity {
         mTelegramStatus.setTextColor(ContextCompat.getColor(this, R.color.status_disconnected));
         mDiscordStatus.setText("○ —");
         mDiscordStatus.setTextColor(ContextCompat.getColor(this, R.color.status_disconnected));
+        if (mFeishuStatus != null) {
+            mFeishuStatus.setText("○ —");
+            mFeishuStatus.setTextColor(ContextCompat.getColor(this, R.color.status_disconnected));
+        }
 
         try {
             JSONObject config = BotDropConfig.readConfig();
@@ -1338,22 +1373,19 @@ public class DashboardActivity extends Activity {
                 return;
             }
 
-            JSONObject telegram = channels.optJSONObject("telegram");
-            boolean telegramConnected = telegram != null
-                    && telegram.optBoolean("enabled", true)
-                    && !TextUtils.isEmpty(telegram.optString("botToken", "").trim());
-            if (telegramConnected) {
+            if (ChannelSetupHelper.isTelegramConfigured(channels.optJSONObject("telegram"))) {
                 mTelegramStatus.setText("● Connected");
                 mTelegramStatus.setTextColor(ContextCompat.getColor(this, R.color.status_connected));
             }
 
-            JSONObject discord = channels.optJSONObject("discord");
-            boolean discordConnected = discord != null
-                    && discord.optBoolean("enabled", true)
-                    && !TextUtils.isEmpty(discord.optString("token", "").trim());
-            if (discordConnected) {
+            if (ChannelSetupHelper.isDiscordConfigured(channels.optJSONObject("discord"))) {
                 mDiscordStatus.setText("● Connected");
                 mDiscordStatus.setTextColor(ContextCompat.getColor(this, R.color.status_connected));
+            }
+
+            if (ChannelSetupHelper.isFeishuConfigured(channels.optJSONObject("feishu")) && mFeishuStatus != null) {
+                mFeishuStatus.setText("● Connected");
+                mFeishuStatus.setTextColor(ContextCompat.getColor(this, R.color.status_connected));
             }
         } catch (Exception e) {
             Logger.logError(LOG_TAG, "Failed to load channel info: " + e.getMessage());
@@ -2578,6 +2610,146 @@ public class DashboardActivity extends Activity {
 
     // --- OpenClaw update ---
 
+    private void showOpenclawVersionManagerDialog() {
+        if (mOpenclawVersionActionInProgress) {
+            return;
+        }
+        if (!mBound || mBotDropService == null) {
+            Toast.makeText(this, "Service not connected", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        setOpenclawVersionManagerBusy(true);
+        dismissOpenclawUpdateDialog();
+        if (mOpenclawVersionManagerDialog != null) {
+            mOpenclawVersionManagerDialog.dismiss();
+            mOpenclawVersionManagerDialog = null;
+        }
+
+        mOpenclawVersionManagerDialog = new AlertDialog.Builder(this)
+            .setTitle("OpenClaw Versions")
+            .setMessage("Loading versions…")
+            .setCancelable(false)
+            .setNegativeButton("Cancel", (d, w) -> setOpenclawVersionManagerBusy(false))
+            .create();
+        mOpenclawVersionManagerDialog.show();
+
+        fetchOpenclawVersions((versions, errorMessage) -> {
+                if (isFinishing() || isDestroyed()) {
+                    setOpenclawVersionManagerBusy(false);
+                    return;
+                }
+                if (mOpenclawVersionManagerDialog != null) {
+                    mOpenclawVersionManagerDialog.dismiss();
+                    mOpenclawVersionManagerDialog = null;
+                }
+
+                if (versions == null || versions.isEmpty()) {
+                    showOpenclawVersionManagerErrorDialog(
+                        TextUtils.isEmpty(errorMessage) ? "No versions available" : errorMessage
+                    );
+                    return;
+                }
+
+                showOpenclawVersionListDialog(versions);
+            }
+        );
+    }
+
+    private void showOpenclawVersionManagerErrorDialog(String message) {
+        if (TextUtils.isEmpty(message)) {
+            message = "Failed to load version list";
+        }
+
+        mOpenclawVersionManagerDialog = new AlertDialog.Builder(this)
+            .setTitle("OpenClaw Versions")
+            .setMessage(message)
+            .setNegativeButton("Close", (d, w) -> setOpenclawVersionManagerBusy(false))
+            .setPositiveButton("Retry", (d, w) -> showOpenclawVersionManagerDialog())
+            .setOnDismissListener(d -> setOpenclawVersionManagerBusy(false))
+            .create();
+        mOpenclawVersionManagerDialog.show();
+    }
+
+    private void showOpenclawVersionListDialog(List<String> versions) {
+        final List<String> normalized = OpenclawVersionUtils.normalizeVersionList(versions);
+        if (normalized.isEmpty()) {
+            showOpenclawVersionManagerErrorDialog("No valid versions found");
+            return;
+        }
+
+        String[] labels = new String[normalized.size()];
+        for (int i = 0; i < normalized.size(); i++) {
+            labels[i] = OpenclawVersionUtils.VERSION_PREFIX + normalized.get(i);
+        }
+
+        mOpenclawVersionManagerDialog = new AlertDialog.Builder(this)
+            .setTitle("OpenClaw Versions")
+            .setItems(labels, (d, which) -> {
+                if (which < 0 || which >= normalized.size()) {
+                    setOpenclawVersionManagerBusy(false);
+                    return;
+                }
+                showOpenclawVersionInstallConfirm(normalized.get(which));
+            })
+            .setNegativeButton("Close", (d, w) -> setOpenclawVersionManagerBusy(false))
+            .create();
+        mOpenclawVersionManagerDialog.show();
+    }
+
+    private void showOpenclawVersionInstallConfirm(String version) {
+        String installVersion = OpenclawVersionUtils.normalizeInstallVersion(version);
+        if (TextUtils.isEmpty(installVersion)) {
+            setOpenclawVersionManagerBusy(false);
+            Toast.makeText(this, "Invalid OpenClaw version", Toast.LENGTH_SHORT).show();
+            return;
+        }
+
+        mOpenclawVersionManagerDialog = new AlertDialog.Builder(this)
+            .setTitle("Install OpenClaw")
+            .setMessage("Install " + installVersion + "?")
+            .setCancelable(false)
+            .setPositiveButton("Install", (d, w) -> {
+                setOpenclawVersionManagerBusy(true);
+                startOpenclawUpdate(installVersion);
+            })
+            .setNegativeButton("Cancel", (d, w) -> setOpenclawVersionManagerBusy(false))
+            .setOnDismissListener(d -> setOpenclawVersionManagerBusy(false))
+            .create();
+        mOpenclawVersionManagerDialog.show();
+    }
+
+    private void fetchOpenclawVersions(OpenclawVersionUtils.VersionListCallback cb) {
+        if (cb == null) {
+            return;
+        }
+        String currentVersion = BotDropService.getOpenclawVersion();
+
+        mBotDropService.executeCommand(OpenclawVersionUtils.VERSIONS_COMMAND, result -> {
+            if (result == null || !result.success) {
+                String fallbackError = result == null
+                    ? "Failed to fetch versions"
+                    : "Failed to fetch versions (exit " + result.exitCode + ")";
+                cb.onResult(OpenclawVersionUtils.buildFallback(currentVersion), fallbackError);
+                return;
+            }
+
+            List<String> versions = OpenclawVersionUtils.parseVersions(result.stdout);
+            if (versions.isEmpty()) {
+                cb.onResult(OpenclawVersionUtils.buildFallback(currentVersion), "No versions found");
+                return;
+            }
+            cb.onResult(versions, null);
+        });
+    }
+
+    private void setOpenclawVersionManagerBusy(boolean isBusy) {
+        mOpenclawVersionActionInProgress = isBusy;
+        if (mOpenclawCheckUpdateButton != null) {
+            mOpenclawCheckUpdateButton.setEnabled(!isBusy);
+        }
+    }
+
     private void checkOpenclawUpdate() {
         if (!mBound || mBotDropService == null) return;
 
@@ -2658,6 +2830,10 @@ public class DashboardActivity extends Activity {
         if (TextUtils.isEmpty(latestVersion) || isFinishing() || isDestroyed()) {
             return;
         }
+        if ((mOpenclawVersionManagerDialog != null && mOpenclawVersionManagerDialog.isShowing())
+            || mOpenclawVersionActionInProgress) {
+            return;
+        }
 
         if (!manualCheck && TextUtils.equals(latestVersion, mOpenclawLatestUpdateVersion)) {
             return;
@@ -2720,11 +2896,20 @@ public class DashboardActivity extends Activity {
     private void startOpenclawUpdate(String targetVersion) {
         if (TextUtils.isEmpty(targetVersion)) {
             Toast.makeText(this, "No update target version", Toast.LENGTH_SHORT).show();
+            setOpenclawVersionManagerBusy(false);
             return;
         }
 
         dismissOpenclawUpdateDialog();
-        if (!mBound || mBotDropService == null) return;
+        setOpenclawVersionManagerBusy(true);
+        if (!mBound || mBotDropService == null) {
+            setOpenclawVersionManagerBusy(false);
+            return;
+        }
+        if (mOpenclawVersionManagerDialog != null) {
+            mOpenclawVersionManagerDialog.dismiss();
+            mOpenclawVersionManagerDialog = null;
+        }
 
         // Build step-based progress dialog
         View dialogView = getLayoutInflater().inflate(R.layout.dialog_openclaw_update, null);
@@ -2792,6 +2977,7 @@ public class DashboardActivity extends Activity {
             @Override
             public void onError(String error) {
                 progressDialog.dismiss();
+                setOpenclawVersionManagerBusy(false);
                 refreshStatus();
                 new AlertDialog.Builder(DashboardActivity.this)
                     .setTitle("Update Failed")
@@ -2822,6 +3008,7 @@ public class DashboardActivity extends Activity {
                         if (!isFinishing()) {
                             progressDialog.dismiss();
                         }
+                        setOpenclawVersionManagerBusy(false);
                         OpenClawUpdateChecker.clearUpdate(DashboardActivity.this);
                         if (mOpenclawVersionText != null) {
                             mOpenclawVersionText.setText("OpenClaw v" + newVersion);

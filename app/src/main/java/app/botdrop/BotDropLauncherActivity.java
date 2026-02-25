@@ -23,7 +23,6 @@ import com.termux.R;
 import com.termux.app.TermuxInstaller;
 import com.termux.shared.logger.Logger;
 
-import org.json.JSONObject;
 
 import java.io.File;
 
@@ -392,16 +391,6 @@ public class BotDropLauncherActivity extends Activity {
     }
 
     private boolean hasChannelConfigured() {
-        try {
-            JSONObject config = BotDropConfig.readConfig();
-            if (config.has("channels")) {
-                JSONObject channels = config.getJSONObject("channels");
-                return channels.has("telegram") || channels.has("discord");
-            }
-            return false;
-        } catch (Exception e) {
-            Logger.logError(LOG_TAG, "Failed to check channel config: " + e.getMessage());
-            return false;
-        }
+        return ChannelSetupHelper.hasAnyChannelConfigured();
     }
 }
