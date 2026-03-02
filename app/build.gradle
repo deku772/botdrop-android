@@ -198,8 +198,7 @@ def downloadBootstrap(String arch) {
     }
 
     def remoteUrls = [
-        "https://github.com/zhixianio/botdrop-packages/releases/latest/download/bootstrap-" + arch + ".zip",
-        "https://github.com/zhixianio/botdrop-packages/releases/latest/download/botdrop-repo-" + arch + ".zip"
+        "https://github.com/zhixianio/botdrop-packages/releases/download/bootstrap-latest/bootstrap-" + arch + ".zip"
     ]
 
     file.parentFile.mkdirs()
