@@ -295,6 +295,53 @@ public class ChannelSetupHelperTest {
         assertFalse("Should return false when unable to write to non-existent paths", result);
     }
 
+    @Test
+    public void testBuildDiscordConfig_preservesExistingGuildChannels_whenNoChannelIdProvided() throws JSONException {
+        JSONObject existingChannels = new JSONObject().put("chan-existing", new JSONObject().put("allow", true));
+        JSONObject existingGuild = new JSONObject()
+            .put("channels", existingChannels)
+            .put("note", "preserve");
+        JSONObject existingDiscord = new JSONObject()
+            .put("token", "old-token")
+            .put("guilds", new JSONObject().put("guild-a", existingGuild));
+
+        JSONObject updated = ChannelSetupHelper.buildDiscordConfig(
+            existingDiscord,
+            "new-token",
+            "guild-a",
+            null
+        );
+
+        JSONObject updatedGuild = updated.getJSONObject("guilds").getJSONObject("guild-a");
+        JSONObject updatedChannels = updatedGuild.getJSONObject("channels");
+
+        assertEquals("new-token", updated.getString("token"));
+        assertEquals("preserve", updatedGuild.getString("note"));
+        assertEquals(1, updatedChannels.length());
+        assertTrue(updatedChannels.has("chan-existing"));
+        assertTrue(updatedChannels.getJSONObject("chan-existing").getBoolean("allow"));
+    }
+
+    @Test
+    public void testBuildDiscordConfig_newGuildWithoutChannelIdGetsEmptyChannels() throws JSONException {
+        JSONObject existingDiscord = new JSONObject()
+            .put("token", "old-token")
+            .put("guilds", new JSONObject().put("guild-a", new JSONObject()));
+
+        JSONObject updated = ChannelSetupHelper.buildDiscordConfig(
+            existingDiscord,
+            "new-token",
+            "guild-b",
+            null
+        );
+
+        JSONObject updatedGuild = updated.getJSONObject("guilds").getJSONObject("guild-b");
+        JSONObject updatedChannels = updatedGuild.getJSONObject("channels");
+
+        assertEquals("new-token", updated.getString("token"));
+        assertEquals(0, updatedChannels.length());
+    }
+
     /**
      * Test: writeChannelConfig for Feishu
      */

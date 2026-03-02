@@ -333,35 +333,7 @@ public class ChannelSetupHelper {
 
             } else if (platform.equals("discord")) {
                 JSONObject existingDiscord = channels.optJSONObject("discord");
-                JSONObject discord = existingDiscord != null ? new JSONObject(existingDiscord.toString()) : new JSONObject();
-                discord.put("enabled", true);
-                discord.put("token", botToken);
-                discord.put("groupPolicy", "allowlist");
-
-                if (!TextUtils.isEmpty(guildId)) {
-                    JSONObject existingGuilds = existingDiscord != null ? existingDiscord.optJSONObject("guilds") : null;
-                    JSONObject guilds = existingGuilds != null ? new JSONObject(existingGuilds.toString()) : new JSONObject();
-                    JSONObject existingGuild = existingGuilds != null ? existingGuilds.optJSONObject(guildId) : null;
-                    JSONObject guild = existingGuild != null ? new JSONObject(existingGuild.toString()) : new JSONObject();
-                    JSONObject guildChannels = guild.optJSONObject("channels");
-                    if (guildChannels == null) {
-                        guildChannels = new JSONObject();
-                    }
-
-                    if (!TextUtils.isEmpty(channelId)) {
-                        JSONObject channel = new JSONObject();
-                        channel.put("allow", true);
-                        channel.put("requireMention", false);
-                        channel.put("autoThread", false);
-                        guildChannels.put(channelId, channel);
-                    } else {
-                        guildChannels = new JSONObject();
-                    }
-                    guild.put("channels", guildChannels);
-
-                    guilds.put(guildId, guild);
-                    discord.put("guilds", guilds);
-                }
+                JSONObject discord = buildDiscordConfig(existingDiscord, botToken, guildId, channelId);
                 channels.put("discord", discord);
 
             } else {
@@ -389,5 +361,49 @@ public class ChannelSetupHelper {
             Logger.logError(LOG_TAG, "Failed to write channel config: " + e.getMessage());
             return false;
         }
+    }
+
+    /**
+     * Build a Discord channel config block from current config and inputs.
+     *
+     * This keeps existing guild/channel mappings when no explicit channelId is provided.
+     * When a new guild is introduced without channelId, guild.channels defaults to empty object.
+     */
+    static JSONObject buildDiscordConfig(
+        JSONObject existingDiscord,
+        String botToken,
+        String guildId,
+        String channelId
+    ) throws JSONException {
+        JSONObject discord = existingDiscord != null ? new JSONObject(existingDiscord.toString()) : new JSONObject();
+        discord.put("enabled", true);
+        discord.put("token", botToken);
+        discord.put("groupPolicy", "allowlist");
+
+        if (TextUtils.isEmpty(guildId)) {
+            return discord;
+        }
+
+        JSONObject existingGuilds = existingDiscord != null ? existingDiscord.optJSONObject("guilds") : null;
+        JSONObject guilds = existingGuilds != null ? new JSONObject(existingGuilds.toString()) : new JSONObject();
+        JSONObject existingGuild = existingGuilds != null ? existingGuilds.optJSONObject(guildId) : null;
+        JSONObject guild = existingGuild != null ? new JSONObject(existingGuild.toString()) : new JSONObject();
+        JSONObject guildChannels = guild.optJSONObject("channels");
+        if (guildChannels == null) {
+            guildChannels = new JSONObject();
+        }
+
+        if (!TextUtils.isEmpty(channelId)) {
+            JSONObject channel = new JSONObject();
+            channel.put("allow", true);
+            channel.put("requireMention", false);
+            channel.put("autoThread", false);
+            guildChannels.put(channelId, channel);
+        }
+
+        guild.put("channels", guildChannels);
+        guilds.put(guildId, guild);
+        discord.put("guilds", guilds);
+        return discord;
     }
 }
