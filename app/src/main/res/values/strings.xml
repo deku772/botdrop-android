@@ -168,6 +168,11 @@
                 <string name="termux_crash_report_notifications_enabled_off">Disable notifications for crash reports.</string>
                 <string name="termux_crash_report_notifications_enabled_on">Show notifications for crash reports. (Default)</string>
 
+                <!-- Firebase Crashlytics -->
+                <string name="termux_crashlytics_collection_enabled_title">Firebase Crashlytics</string>
+                <string name="termux_crashlytics_collection_enabled_off">Disable automatic crash collection to Firebase.</string>
+                <string name="termux_crashlytics_collection_enabled_on">Enable automatic crash collection to Firebase.</string>
+
 
         <!-- Terminal IO Preferences -->
         <string name="termux_terminal_io_preferences_title">Terminal I/O</string>

@@ -32,6 +32,9 @@ public class TermuxApplication extends Application {
         // Set log config for the app
         setLogConfig(context);
 
+        // Configure Firebase Crashlytics collection from build defaults and user preference.
+        CrashlyticsManager.applyCollectionState(context);
+
         Logger.logDebug("Starting Application");
 
         // Set TermuxBootstrap.TERMUX_APP_PACKAGE_MANAGER and TermuxBootstrap.TERMUX_APP_PACKAGE_VARIANT
