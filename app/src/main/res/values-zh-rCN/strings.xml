@@ -253,10 +253,11 @@
     <string name="botdrop_u2_service_status_running">u2 服务运行中</string>
     <string name="botdrop_u2_service_status_stopped">u2 服务已停止</string>
     <string name="botdrop_u2_service_status_stopped_with_reason">u2 服务已停止：%1$s</string>
-    <string name="botdrop_u2_service_prepare_step_clean_sources">[1/4] 清理 apt 源…</string>
-    <string name="botdrop_u2_service_prepare_step_prepare_env">[2/4] 重装依赖包（约 1–2 分钟）…</string>
-    <string name="botdrop_u2_service_prepare_step_verify">[3/4] 安装 u2automator（约 2–5 分钟）…</string>
-    <string name="botdrop_u2_service_prepare_step_complete">[4/4] 启动 u2.jar…</string>
+    <string name="botdrop_u2_service_prepare_step_clean_sources">[1/5] 清理 apt 源…</string>
+    <string name="botdrop_u2_service_prepare_step_prepare_env">[2/5] 重装依赖包（约 1–2 分钟）…</string>
+    <string name="botdrop_u2_service_prepare_step_verify">[3/5] 安装 u2automator（约 2–5 分钟）…</string>
+    <string name="botdrop_u2_service_prepare_step_install_ime">[4/5] 安装 AdbKeyboard 输入法…</string>
+    <string name="botdrop_u2_service_prepare_step_start_u2">[5/5] 启动 u2.jar…</string>
     <string name="botdrop_u2_service_starting">正在启动 u2 服务...</string>
     <string name="botdrop_u2_service_start_failed">启动 u2 服务失败</string>
     <string name="botdrop_u2_service_start_command_sent">u2 启动命令已发送</string>

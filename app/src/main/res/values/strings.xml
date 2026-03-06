@@ -271,10 +271,11 @@
     <string name="botdrop_u2_service_status_running">u2 service running</string>
     <string name="botdrop_u2_service_status_stopped">u2 service stopped</string>
     <string name="botdrop_u2_service_status_stopped_with_reason">u2 service stopped: %1$s</string>
-    <string name="botdrop_u2_service_prepare_step_clean_sources">[1/4] Trimming apt sources…</string>
-    <string name="botdrop_u2_service_prepare_step_prepare_env">[2/4] Reinstalling dependencies (may take 1–2 min)…</string>
-    <string name="botdrop_u2_service_prepare_step_verify">[3/4] Installing u2automator (may take 2–5 min)…</string>
-    <string name="botdrop_u2_service_prepare_step_complete">[4/4] Starting u2.jar…</string>
+    <string name="botdrop_u2_service_prepare_step_clean_sources">[1/5] Trimming apt sources…</string>
+    <string name="botdrop_u2_service_prepare_step_prepare_env">[2/5] Reinstalling dependencies (may take 1–2 min)…</string>
+    <string name="botdrop_u2_service_prepare_step_verify">[3/5] Installing u2automator (may take 2–5 min)…</string>
+    <string name="botdrop_u2_service_prepare_step_install_ime">[4/5] Installing AdbKeyboard IME…</string>
+    <string name="botdrop_u2_service_prepare_step_start_u2">[5/5] Starting u2.jar…</string>
     <string name="botdrop_u2_service_starting">Starting u2 service...</string>
     <string name="botdrop_u2_service_start_failed">Failed to start u2 service</string>
     <string name="botdrop_u2_service_start_command_sent">u2 service start command sent</string>

@@ -105,9 +105,12 @@ Rules:
 
 ## Chinese Input Strategy
 
-1. Ensure target input exists and is focused
-2. Call `set_text`
-3. Verify send/post button visibility
+1. Prefer uiautomator2 FastInputIME for reliable CJK input:
+   - `d.set_fastinput_ime(True)` to switch to FastInputIME
+   - `d.send_keys("中文文本")` to input via ADB broadcast
+   - `d.set_fastinput_ime(False)` to restore original IME
+2. Fall back to `set_text` only if FastInputIME is unavailable
+3. Verify send/post button visibility after input
 
 ## Debug Checklist (tap has no effect)
 

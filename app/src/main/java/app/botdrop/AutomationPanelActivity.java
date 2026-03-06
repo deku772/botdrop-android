@@ -64,6 +64,10 @@ public class AutomationPanelActivity extends Activity {
     private static final String U2_RUNTIME_JAR_PATH = "/data/local/tmp/u2.jar";
     private static final String U2_ASSET_PATH = "u2.jar";
     private static final long U2_PREPARE_TIMEOUT_MS = 180000;
+    private static final String U2_IME_APK_URL =
+        "https://github.com/openatx/android-uiautomator-server/releases/latest/download/app-uiautomator.apk";
+    private static final String U2_IME_PACKAGE = "com.github.uiautomator";
+    private static final String U2_IME_COMPONENT = U2_IME_PACKAGE + "/.AdbKeyboard";
 
     private ImageButton mBackButton;
     private Button mOpenShizukuButton;
@@ -77,6 +81,7 @@ public class AutomationPanelActivity extends Activity {
     private BotDropService mBotDropService;
     private ShizukuShellExecutor mShizukuShellExecutor;
     private boolean mBound;
+    private volatile boolean mU2SetupInProgress;
     private final Handler mHandler = new Handler(Looper.getMainLooper());
     private final Runnable mStatusPollRunnable = new Runnable() {
         @Override
@@ -443,6 +448,8 @@ public class AutomationPanelActivity extends Activity {
             if (stateResult.running) {
                 mU2StatusText.setText(getString(R.string.botdrop_u2_service_status_running));
                 setU2ServiceButtonsState(false, true);
+            } else if (mU2SetupInProgress) {
+                // Setup in progress – don't override status text or re-enable buttons
             } else if (TextUtils.isEmpty(stateResult.message)) {
                 mU2StatusText.setText(getString(R.string.botdrop_u2_service_status_stopped));
                 setU2ServiceButtonsState(true, false);
@@ -456,11 +463,15 @@ public class AutomationPanelActivity extends Activity {
     }
 
     private void startU2Service() {
+        if (mU2SetupInProgress) {
+            return;
+        }
         if (mBotDropService == null || !mBound) {
             Toast.makeText(this, getString(R.string.botdrop_service_not_connected), Toast.LENGTH_SHORT).show();
             return;
         }
 
+        mU2SetupInProgress = true;
         setU2ServiceButtonsState(false, false);
         mU2StatusText.setText(getString(R.string.botdrop_u2_service_status_checking));
         Toast.makeText(this, getString(R.string.botdrop_u2_service_starting), Toast.LENGTH_SHORT).show();
@@ -469,6 +480,7 @@ public class AutomationPanelActivity extends Activity {
             // Pre-step: copy u2.jar from assets to /data/local/tmp/
             String copyMessage = ensureU2JarFromAssets();
             if (!TextUtils.isEmpty(copyMessage)) {
+                mU2SetupInProgress = false;
                 runOnUiThread(() -> {
                     Toast.makeText(this, getString(R.string.botdrop_u2_service_start_failed) + ": " + copyMessage,
                             Toast.LENGTH_LONG).show();
@@ -483,9 +495,9 @@ public class AutomationPanelActivity extends Activity {
             mBotDropService.executeU2SetupCommand(buildCheckU2AutomatorInstalledCommand(), checkResult -> {
                 if (!isUiAvailable()) return;
                 if (checkResult != null && checkResult.success) {
-                    // Already installed – skip to step 4
+                    // Already installed – skip to step 4, still install IME
                     Logger.logInfo(LOG_TAG, "u2automator already installed, skipping steps 1-3");
-                    startU2Jar();
+                    installAdbKeyboardIme(() -> startU2Jar());
                 } else {
                     // Not installed – run full setup steps 1-3 then start
                     runU2SetupSteps();
@@ -495,13 +507,14 @@ public class AutomationPanelActivity extends Activity {
     }
 
     private void startU2Jar() {
-        setU2StatusText(getString(R.string.botdrop_u2_service_prepare_step_complete));
+        setU2StatusText(getString(R.string.botdrop_u2_service_prepare_step_start_u2));
         executeShizukuShellCommand(buildStartU2Command(), step4 -> {
             if (!isUiAvailable()) return;
             if (step4 == null || !step4.success) {
                 handleU2StartStepFailure("start u2.jar", step4);
                 return;
             }
+            mU2SetupInProgress = false;
             runOnUiThread(() -> {
                 Toast.makeText(this,
                         getString(R.string.botdrop_u2_service_start_command_sent),
@@ -512,7 +525,7 @@ public class AutomationPanelActivity extends Activity {
     }
 
     private void runU2SetupSteps() {
-        // Step 1/4: Trim apt sources (via Termux shell)
+        // Step 1/5: Trim apt sources (via Termux shell)
         setU2StatusText(getString(R.string.botdrop_u2_service_prepare_step_clean_sources));
         mBotDropService.executeU2SetupCommand(buildTrimAptSourcesForU2Command(), step1 -> {
             if (!isUiAvailable()) return;
@@ -521,7 +534,7 @@ public class AutomationPanelActivity extends Activity {
                 return;
             }
 
-            // Step 2/4: Reinstall dependencies (via Termux shell, up to 3 min)
+            // Step 2/5: Reinstall dependencies (via Termux shell, up to 3 min)
             setU2StatusText(getString(R.string.botdrop_u2_service_prepare_step_prepare_env));
             mBotDropService.executeU2SetupCommand(buildReinstallDependenciesCommand(), 180, step2 -> {
                 if (!isUiAvailable()) return;
@@ -530,7 +543,7 @@ public class AutomationPanelActivity extends Activity {
                     return;
                 }
 
-                // Step 3/4: Install u2automator from GitHub (via Termux shell, up to 10 min)
+                // Step 3/5: Install u2automator from GitHub (via Termux shell, up to 10 min)
                 setU2StatusText(getString(R.string.botdrop_u2_service_prepare_step_verify));
                 mBotDropService.executeU2SetupCommand(buildInstallU2AutomatorCommand(), 600, step3 -> {
                     if (!isUiAvailable()) return;
@@ -539,8 +552,9 @@ public class AutomationPanelActivity extends Activity {
                         return;
                     }
 
-                    // Step 4/4: Start u2.jar (via Shizuku)
-                    startU2Jar();
+                    // Step 4/5: Install AdbKeyboard IME (via Shizuku shell)
+                    // Step 5/5: Start u2.jar (via Shizuku)
+                    installAdbKeyboardIme(() -> startU2Jar());
                 });
             });
         });
@@ -549,6 +563,7 @@ public class AutomationPanelActivity extends Activity {
     private void handleU2StartStepFailure(String stepName,
             @Nullable BotDropService.CommandResult result) {
         String reason = resolveCommandFailure(result);
+        mU2SetupInProgress = false;
         runOnUiThread(() -> {
             if (!isUiAvailable()) return;
             String message = getString(R.string.botdrop_u2_service_start_failed) + ": " + reason;
@@ -557,6 +572,103 @@ public class AutomationPanelActivity extends Activity {
             Logger.logWarn(LOG_TAG, "u2 start failed at [" + stepName + "]: " + reason);
             checkU2ServiceStatus();
         });
+    }
+
+    private void installAdbKeyboardIme(Runnable onComplete) {
+        setU2StatusText(getString(R.string.botdrop_u2_service_prepare_step_install_ime));
+
+        // Check if already installed via Shizuku shell
+        executeShizukuShellCommand("pm list packages " + U2_IME_PACKAGE, checkResult -> {
+            if (!isUiAvailable()) return;
+            boolean alreadyInstalled = checkResult != null && checkResult.success
+                && checkResult.stdout != null && checkResult.stdout.contains(U2_IME_PACKAGE);
+
+            if (alreadyInstalled) {
+                Logger.logInfo(LOG_TAG, "AdbKeyboard IME already installed, enabling");
+                executeShizukuShellCommand("ime enable " + U2_IME_COMPONENT, enableResult -> {
+                    if (!isUiAvailable()) return;
+                    onComplete.run();
+                });
+                return;
+            }
+
+            // Download APK and install
+            new Thread(() -> {
+                String error = downloadToExternalCache(U2_IME_APK_URL, "app-uiautomator.apk");
+                if (error != null) {
+                    mU2SetupInProgress = false;
+                    runOnUiThread(() -> {
+                        if (!isUiAvailable()) return;
+                        String message = getString(R.string.botdrop_u2_service_start_failed) + ": " + error;
+                        Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+                        setU2StatusText(message);
+                        Logger.logWarn(LOG_TAG, "Download AdbKeyboard APK failed: " + error);
+                        checkU2ServiceStatus();
+                    });
+                    return;
+                }
+
+                // Copy to /data/local/tmp/ first (pm install can't read app external cache)
+                File apk = new File(getExternalCacheDir(), "app-uiautomator.apk");
+                String tmpApk = "/data/local/tmp/app-uiautomator.apk";
+                String installCmd = "cp \"" + apk.getAbsolutePath() + "\" \"" + tmpApk + "\""
+                    + " && pm install -r -t \"" + tmpApk + "\""
+                    + " && ime enable " + U2_IME_COMPONENT
+                    + " ; rm -f \"" + tmpApk + "\"";
+                executeShizukuShellCommand(installCmd, installResult -> {
+                    if (!isUiAvailable()) return;
+                    if (installResult == null || !installResult.success) {
+                        handleU2StartStepFailure("install AdbKeyboard IME", installResult);
+                        return;
+                    }
+                    Logger.logInfo(LOG_TAG, "AdbKeyboard IME installed and enabled");
+                    onComplete.run();
+                });
+            }).start();
+        });
+    }
+
+    /**
+     * Downloads a file from URL to external cache directory.
+     * @return null on success, error message on failure.
+     */
+    @Nullable
+    private String downloadToExternalCache(String urlStr, String filename) {
+        try {
+            File cacheDir = getExternalCacheDir();
+            if (cacheDir == null) {
+                return "external cache dir unavailable";
+            }
+            File outFile = new File(cacheDir, filename);
+
+            URL url = new URL(urlStr);
+            HttpURLConnection conn = (HttpURLConnection) url.openConnection();
+            conn.setConnectTimeout(30000);
+            conn.setReadTimeout(60000);
+            conn.setInstanceFollowRedirects(true);
+            conn.connect();
+
+            int code = conn.getResponseCode();
+            if (code != HttpURLConnection.HTTP_OK) {
+                conn.disconnect();
+                return "HTTP " + code;
+            }
+
+            try (InputStream in = conn.getInputStream();
+                 OutputStream out = new FileOutputStream(outFile)) {
+                byte[] buf = new byte[8192];
+                int len;
+                while ((len = in.read(buf)) != -1) {
+                    out.write(buf, 0, len);
+                }
+            }
+            conn.disconnect();
+            Logger.logInfo(LOG_TAG, "Downloaded " + filename + " to " + outFile.getAbsolutePath());
+            return null;
+        } catch (Exception e) {
+            Logger.logWarn(LOG_TAG, "Download failed: " + e.getMessage());
+            return e.getMessage();
+        }
     }
 
     private void setU2StatusText(@Nullable String text) {
@@ -594,7 +706,7 @@ public class AutomationPanelActivity extends Activity {
             + "  exit 1\n"
             + "fi\n"
             + "apt update\n"
-            + "apt install -y --reinstall python python-pip libxml2 libxslt libicu zlib libjpeg-turbo\n"
+            + "apt install -y --reinstall python python-pip python-pillow python-lxml libxml2 libxslt libicu zlib libjpeg-turbo\n"
             + "if ! command -v pip >/dev/null 2>&1 && ! command -v pip3 >/dev/null 2>&1; then\n"
             + "  echo \"pip not available after reinstall\" >&2\n"
             + "  exit 1\n"
@@ -815,30 +927,53 @@ public class AutomationPanelActivity extends Activity {
             + "fi\n";
     }
 
+    /**
+     * Copy u2.jar from assets to app cache dir, then use Shizuku shell to copy
+     * it to /data/local/tmp/ (app uid cannot write there directly).
+     * Returns null on success, or error message on failure.
+     */
     private String ensureU2JarFromAssets() {
-        File targetFile = new File(U2_RUNTIME_JAR_PATH);
-        File outputDir = targetFile.getParentFile();
-        if (outputDir == null || !outputDir.exists() && !outputDir.mkdirs()) {
-            return "Cannot create directory for u2 jar: " + U2_RUNTIME_JAR_PATH;
+        // Step 1: Copy from assets to external cache (readable by both shell and root)
+        File extCacheDir = getExternalCacheDir();
+        if (extCacheDir == null) {
+            return "External cache directory unavailable";
         }
-
-        if (targetFile.exists() && targetFile.length() > 0) {
-            return null;
-        }
-
+        File cacheJar = new File(extCacheDir, "u2.jar");
         try (InputStream input = getAssets().open(U2_ASSET_PATH);
-             OutputStream output = new FileOutputStream(targetFile)) {
+             OutputStream output = new FileOutputStream(cacheJar)) {
             byte[] buffer = new byte[8192];
             int bytesRead;
             while ((bytesRead = input.read(buffer)) != -1) {
                 output.write(buffer, 0, bytesRead);
             }
             output.flush();
-            return null;
         } catch (Throwable e) {
-            Logger.logWarn(LOG_TAG, "Failed to copy u2.jar from assets: " + e.getMessage());
+            Logger.logWarn(LOG_TAG, "Failed to copy u2.jar to external cache: " + e.getMessage());
             return e.getMessage();
         }
+
+        // Step 2: Use Shizuku shell to copy from cache to /data/local/tmp/
+        String cpCommand = "cp '" + cacheJar.getAbsolutePath() + "' '" + U2_RUNTIME_JAR_PATH + "' && chmod 644 '" + U2_RUNTIME_JAR_PATH + "'";
+        java.util.concurrent.CountDownLatch latch = new java.util.concurrent.CountDownLatch(1);
+        final String[] errorHolder = {null};
+
+        executeShizukuShellCommand(cpCommand, result -> {
+            if (result == null || !result.success) {
+                errorHolder[0] = result == null ? "Shizuku unavailable" : resolveCommandFailure(result);
+            }
+            latch.countDown();
+        });
+
+        try {
+            if (!latch.await(15, java.util.concurrent.TimeUnit.SECONDS)) {
+                return "Timeout copying u2.jar via Shizuku";
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return "Interrupted copying u2.jar";
+        }
+
+        return errorHolder[0];
     }
 
     private String buildStopU2Command() {
