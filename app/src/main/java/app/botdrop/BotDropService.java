@@ -1225,8 +1225,10 @@ public class BotDropService extends Service {
     private String buildTermuxGcryptHardwareAccelerationCheckCommand() {
         return "export PREFIX=\"" + TermuxConstants.TERMUX_PREFIX_DIR_PATH + "\"\n"
             + "export PATH=\"$PREFIX/bin:$PATH\"\n"
+            + "HWF_DIR=\"$PREFIX/etc/gcrypt\"\n"
+            + "HWF_DENY=\"$HWF_DIR/hwf.deny\"\n"
             + "if ! command -v python3 >/dev/null 2>&1; then\n"
-            + "  echo \"[check-gcrypt] python3 not found, skip gcrypt hwaccel check\"\n"
+            + "  echo \"[check-gcrypt] python3 not found\"\n"
             + "else\n"
             + "  if python3 - <<'PY'\n"
             + "import ctypes\n"
@@ -1243,7 +1245,10 @@ public class BotDropService extends Service {
             + "  then\n"
             + "    echo \"[check-gcrypt] gcrypt hardware acceleration test passed\"\n"
             + "  else\n"
-            + "    echo \"[check-gcrypt] gcrypt hardware acceleration test failed, skip disable\"\n"
+            + "    echo \"[check-gcrypt] gcrypt hardware acceleration test failed\"\n"
+            + "    mkdir -p \"$HWF_DIR\"\n"
+            + "    echo \"all\" > \"$HWF_DENY\"\n"
+            + "    echo \"[check-gcrypt] hwf.deny written: $HWF_DENY\"\n"
             + "  fi\n"
             + "fi\n"
             + "\n";
