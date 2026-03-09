@@ -1148,6 +1148,7 @@ public class BotDropService extends Service {
     private void ensureSharpInstalled() {
         String cmd =
             buildBotDropAptSourceScript() +
+            buildTermuxGcryptHardwareAccelerationCheckCommand() +
             "SHARP_CHECK=$(node -e 'try { require(\"sharp\"); process.exit(0); } catch (e) { console.error(e.message); process.exit(1); }' 2>&1)\n" +
             "SHARP_EXIT=$?\n" +
             "if [ $SHARP_EXIT -eq 0 ]; then\n" +
@@ -1219,6 +1220,33 @@ public class BotDropService extends Service {
             "        rm -f \"$f\"\n" +
             "    fi\n" +
             "done\n";
+    }
+
+    private String buildTermuxGcryptHardwareAccelerationCheckCommand() {
+        return "export PREFIX=\"" + TermuxConstants.TERMUX_PREFIX_DIR_PATH + "\"\n"
+            + "export PATH=\"$PREFIX/bin:$PATH\"\n"
+            + "if ! command -v python3 >/dev/null 2>&1; then\n"
+            + "  echo \"[check-gcrypt] python3 not found, skip gcrypt hwaccel check\"\n"
+            + "else\n"
+            + "  if python3 - <<'PY'\n"
+            + "import ctypes\n"
+            + "gc = ctypes.CDLL('libgcrypt.so')\n"
+            + "gc.gcry_check_version(None)\n"
+            + "for algo, name in [(1, 'MD5'), (2, 'SHA1'), (8, 'SHA256'), (10, 'SHA512')]:\n"
+            + "    hd = ctypes.c_void_p()\n"
+            + "    gc.gcry_md_open(ctypes.byref(hd), algo, 0)\n"
+            + "    data = b'A' * 65536\n"
+            + "    for _ in range(16):\n"
+            + "        gc.gcry_md_write(hd, data, len(data))\n"
+            + "    print(f'{name}: write 1MB OK')\n"
+            + "PY\n"
+            + "  then\n"
+            + "    echo \"[check-gcrypt] gcrypt hardware acceleration test passed\"\n"
+            + "  else\n"
+            + "    echo \"[check-gcrypt] gcrypt hardware acceleration test failed, skip disable\"\n"
+            + "  fi\n"
+            + "fi\n"
+            + "\n";
     }
 
     /**
