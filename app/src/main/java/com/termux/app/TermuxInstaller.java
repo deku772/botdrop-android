@@ -464,6 +464,9 @@ public final class TermuxInstaller {
                 "mkdir -p $HOME/.openclaw/agents/main/agent\n" +
                 "mkdir -p $HOME/.openclaw/agents/main/sessions\n" +
                 "mkdir -p $HOME/.openclaw/credentials\n" +
+                "# Add BotDrop APT source\n" +
+                "mkdir -p $PREFIX/etc/apt/sources.list.d\n" +
+                "echo 'deb [trusted=yes] https://zhixianio.github.io/botdrop-packages/ stable main' > $PREFIX/etc/apt/sources.list.d/botdrop.list\n" +
                 "# Start sshd (port 8022)\n" +
                 "if ! pgrep -x sshd >/dev/null 2>&1; then\n" +
                 "    sshd 2>/dev/null\n" +

@@ -30,11 +30,13 @@ import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.core.content.ContextCompat;
 
+import app.botdrop.shizuku.ShizukuBridgeService;
 import com.termux.R;
 import com.termux.app.TermuxActivity;
 import com.termux.shared.android.PermissionUtils;
 import com.termux.shared.logger.Logger;
 import com.termux.shared.termux.TermuxConstants;
+import moe.shizuku.manager.MainActivity;
 
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -90,6 +92,7 @@ public class DashboardActivity extends Activity {
     private static final int OPENCLAW_WEB_UI_REACHABILITY_RETRY_DELAY_MS = 700;
     // Version management constants moved to OpenclawVersionUtils
     private static final String OPENCLAW_DASHBOARD_COMMAND = "openclaw dashboard --no-open 2>&1";
+    private static final String OPENCLAW_GATEWAY_PRECHECK_COMMAND = "openclaw --version";
     private static final int OPENCLAW_DEFAULT_WEB_UI_PORT = 18789;
     private static final String OPENCLAW_DEFAULT_WEB_UI_PATH = "/";
     private static final String OPENCLAW_DEFAULT_WEB_UI_URL = "http://127.0.0.1:" + OPENCLAW_DEFAULT_WEB_UI_PORT + OPENCLAW_DEFAULT_WEB_UI_PATH;
@@ -158,6 +161,7 @@ public class DashboardActivity extends Activity {
     private TextView mOpenclawWebUiButton;
     private TextView mOpenclawBackupButton;
     private TextView mOpenclawRestoreButton;
+    private Button mOpenAutomationPanelButton;
     private ImageButton mBackToAgentSelectionButton;
     private String mOpenclawLatestUpdateVersion;
     private AlertDialog mOpenclawUpdateDialog;
@@ -175,7 +179,6 @@ public class DashboardActivity extends Activity {
     private String mLastErrorMessage;
     private Runnable mPendingOpenclawStorageAction;
     private Runnable mPendingOpenclawStorageDeniedAction;
-
     private interface ModelListPrefetchCallback {
         void onFinished(boolean success);
     }
@@ -197,6 +200,9 @@ public class DashboardActivity extends Activity {
 
             // Start gateway monitor service
             startGatewayMonitorService();
+
+            // Keep embedded Shizuku bridge warm for openclaw/command fallback path
+            startShizukuBridgeService();
 
             // Load current model
             loadCurrentModel();
@@ -240,6 +246,7 @@ public class DashboardActivity extends Activity {
         Button changeModelButton = findViewById(R.id.btn_change_model);
         mGatewayErrorBanner = findViewById(R.id.gateway_error_banner);
         mGatewayErrorText = findViewById(R.id.gateway_error_text);
+        mOpenAutomationPanelButton = findViewById(R.id.btn_open_automation_panel);
 
         // Setup button listeners
         mStartButton.setOnClickListener(v -> startGateway());
@@ -247,6 +254,9 @@ public class DashboardActivity extends Activity {
         mRestartButton.setOnClickListener(v -> restartGatewayForControl());
         openTerminalButton.setOnClickListener(v -> openTerminal());
         changeModelButton.setOnClickListener(v -> showModelSelector());
+        if (mOpenAutomationPanelButton != null) {
+            mOpenAutomationPanelButton.setOnClickListener(v -> openAutomationPanel());
+        }
 
         mSshCard = findViewById(R.id.ssh_card);
         mSshInfoText = findViewById(R.id.ssh_info_text);
@@ -1472,6 +1482,23 @@ public class DashboardActivity extends Activity {
     private void openTerminal() {
         Intent intent = new Intent(this, TermuxActivity.class);
         startActivity(intent);
+    }
+    private void openAutomationPanel() {
+        Intent intent = new Intent(this, AutomationPanelActivity.class);
+        startActivity(intent);
+    }
+
+    private void startShizukuBridgeService() {
+        Intent intent = new Intent(this, ShizukuBridgeService.class);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent);
+            } else {
+                startService(intent);
+            }
+        } catch (Throwable e) {
+            Logger.logWarn(LOG_TAG, "Failed to start embedded Shizuku bridge: " + e.getMessage());
+        }
     }
 
     private void openOpenclawWebUi() {
