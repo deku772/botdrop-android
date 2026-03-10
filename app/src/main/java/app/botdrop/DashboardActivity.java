@@ -388,6 +388,13 @@ public class DashboardActivity extends Activity {
         loadChannelInfo();
     }
 
+    /**
+     * Check whether it is safe to show a dialog on this Activity.
+     */
+    private boolean canShowDialog() {
+        return !isFinishing() && !isDestroyed();
+    }
+
     @Override
     public void onRequestPermissionsResult(int requestCode, @NonNull String[] permissions, @NonNull int[] grantResults) {
         super.onRequestPermissionsResult(requestCode, permissions, grantResults);
@@ -539,6 +546,7 @@ public class DashboardActivity extends Activity {
     }
 
     private void confirmOpenclawRestore(File backupFile) {
+        if (!canShowDialog()) return;
         String createdAtText = formatBackupTimestamp(readBackupCreatedAt(backupFile));
         String message = getString(
             R.string.botdrop_restore_openclaw_data_message,
@@ -1563,7 +1571,7 @@ public class DashboardActivity extends Activity {
             if (reachable || attempt >= OPENCLAW_WEB_UI_REACHABILITY_RETRY_COUNT) {
                 runOnUiThread(() -> {
                     mOpenclawWebUiOpening = false;
-                    if (!isFinishing()) {
+                    if (canShowDialog()) {
                         if (!mUiVisible) {
                             return;
                         }
@@ -2369,6 +2377,7 @@ public class DashboardActivity extends Activity {
             }
 
             final String finalLogText = logText;
+            if (!canShowDialog()) return;
             View logDialogView = getLayoutInflater().inflate(R.layout.dialog_openclaw_log, null);
             TextView logView = logDialogView.findViewById(R.id.openclaw_log_text);
             logView.setText(finalLogText);
@@ -2448,6 +2457,7 @@ public class DashboardActivity extends Activity {
     }
 
     private void showOpenclawVersionManagerErrorDialog(String message) {
+        if (!canShowDialog()) return;
         if (TextUtils.isEmpty(message)) {
             message = getString(R.string.botdrop_failed_to_load_version_list);
         }
@@ -2463,6 +2473,7 @@ public class DashboardActivity extends Activity {
     }
 
     private void showOpenclawVersionListDialog(List<String> versions) {
+        if (!canShowDialog()) return;
         final List<String> normalized = OpenclawVersionUtils.normalizeVersionList(versions);
         if (normalized.isEmpty()) {
             showOpenclawVersionManagerErrorDialog(getString(R.string.botdrop_no_valid_versions_found));
@@ -2489,6 +2500,7 @@ public class DashboardActivity extends Activity {
     }
 
     private void showOpenclawVersionInstallConfirm(String version) {
+        if (!canShowDialog()) return;
         String installVersion = OpenclawVersionUtils.normalizeInstallVersion(version);
         if (TextUtils.isEmpty(installVersion)) {
             setOpenclawVersionManagerBusy(false);
@@ -2768,11 +2780,13 @@ public class DashboardActivity extends Activity {
                 progressDialog.dismiss();
                 setOpenclawVersionManagerBusy(false);
                 refreshStatus();
-                new AlertDialog.Builder(DashboardActivity.this)
-                    .setTitle(R.string.botdrop_update_failed)
-                    .setMessage(error)
-                    .setPositiveButton(android.R.string.ok, null)
-                    .show();
+                if (canShowDialog()) {
+                    new AlertDialog.Builder(DashboardActivity.this)
+                        .setTitle(R.string.botdrop_update_failed)
+                        .setMessage(error)
+                        .setPositiveButton(android.R.string.ok, null)
+                        .show();
+                }
                 checkOpenclawUpdate();
             }
 
@@ -2794,7 +2808,7 @@ public class DashboardActivity extends Activity {
 
                     // Auto-dismiss after 1.5s
                     mHandler.postDelayed(() -> {
-                        if (!isFinishing()) {
+                        if (canShowDialog()) {
                             progressDialog.dismiss();
                         }
                         setOpenclawVersionManagerBusy(false);
