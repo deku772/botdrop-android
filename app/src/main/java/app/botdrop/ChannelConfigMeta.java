@@ -80,7 +80,7 @@ public class ChannelConfigMeta {
             R.string.botdrop_discord_token_hint,
             R.string.botdrop_owner_id,
             R.string.botdrop_discord_owner_id_hint,
-            R.string.botdrop_discord_steps,
+            R.string.botdrop_discord_intro,
             false
         );
     }

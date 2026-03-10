@@ -128,6 +128,58 @@ public class ChannelSetupHelper {
     }
 
     /**
+     * Remove a channel configuration from openclaw.json.
+     *
+     * @param platform "telegram" | "discord" | "feishu" | "qqbot"
+     * @return true if config was removed and file write succeeded
+     */
+    public static boolean removeChannelConfig(String platform) {
+        if (TextUtils.isEmpty(platform)) {
+            Logger.logError(LOG_TAG, "Platform is empty");
+            return false;
+        }
+        try {
+            JSONObject config = BotDropConfig.readConfig();
+            JSONObject channels = config != null ? config.optJSONObject("channels") : null;
+            JSONObject plugins = config != null ? config.optJSONObject("plugins") : null;
+            boolean removed = false;
+
+            if (channels != null && channels.has(platform)) {
+                channels.remove(platform);
+                removed = true;
+                if (channels.length() == 0) {
+                    config.remove("channels");
+                }
+            }
+
+            if (plugins != null) {
+                JSONObject entries = plugins.optJSONObject("entries");
+                if (entries != null && entries.has(platform)) {
+                    entries.remove(platform);
+                    removed = true;
+                    if (entries.length() == 0) {
+                        plugins.remove("entries");
+                    }
+                }
+                if (plugins.length() == 0) {
+                    config.remove("plugins");
+                }
+            }
+
+            if (!removed) {
+                return false;
+            }
+
+            Logger.logInfo(LOG_TAG, "Removing channel config for platform: " + platform);
+            return BotDropConfig.writeConfig(config);
+
+        } catch (Exception e) {
+            Logger.logError(LOG_TAG, "Failed to remove channel config: " + e.getMessage());
+            return false;
+        }
+    }
+
+    /**
      * Check if Telegram channel is configured (has token + allowFrom or ownerId).
      */
     public static boolean isTelegramConfigured(JSONObject telegram) {

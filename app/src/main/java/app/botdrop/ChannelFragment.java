@@ -21,6 +21,7 @@ import com.termux.shared.logger.Logger;
 public class ChannelFragment extends Fragment {
 
     private static final String LOG_TAG = "ChannelFragment";
+    private static final String QQ_TAB_TITLE = "QQ";
     private static final int[] TAB_TITLE_IDS = {
         R.string.botdrop_platform_telegram,
         R.string.botdrop_platform_discord,
@@ -57,10 +58,7 @@ public class ChannelFragment extends Fragment {
         mChannelPager.setOffscreenPageLimit(1);
 
         new TabLayoutMediator(mChannelTabs, mChannelPager, (tab, position) -> {
-            String title = (position >= 0 && position < TAB_TITLE_IDS.length)
-                ? getString(TAB_TITLE_IDS[position])
-                : String.valueOf(position + 1);
-            tab.setText(title);
+            tab.setText(resolveTabTitle(position));
         }).attach();
 
         String platform = null;
@@ -82,5 +80,16 @@ public class ChannelFragment extends Fragment {
             return ChannelPagerAdapter.PAGE_QQBOT;
         }
         return ChannelPagerAdapter.PAGE_TELEGRAM;
+    }
+
+    private String resolveTabTitle(int position) {
+        if (position == ChannelPagerAdapter.PAGE_QQBOT) {
+            return QQ_TAB_TITLE;
+        }
+
+        if (position >= 0 && position < TAB_TITLE_IDS.length) {
+            return getString(TAB_TITLE_IDS[position]);
+        }
+        return String.valueOf(position + 1);
     }
 }
