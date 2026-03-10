@@ -93,7 +93,6 @@ public class BotDropService extends Service {
         return START_STICKY;
     }
 
-
     /**
      * Safely submit a task to an executor, catching RejectedExecutionException
      * that occurs when the executor has been shut down (e.g. after onDestroy).
@@ -451,7 +450,7 @@ public class BotDropService extends Service {
                 return true;
             }
             try {
-                Thread.sleep(200);
+                Thread.sleep(500);
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return false;
@@ -1361,7 +1360,7 @@ public class BotDropService extends Service {
             } catch (IllegalThreadStateException e) {
                 // still running
             }
-            Thread.sleep(200);
+            Thread.sleep(500);
         }
         return false;
     }
