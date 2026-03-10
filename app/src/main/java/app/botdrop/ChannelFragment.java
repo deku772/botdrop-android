@@ -21,6 +21,7 @@ import com.termux.shared.logger.Logger;
 public class ChannelFragment extends Fragment {
 
     private static final String LOG_TAG = "ChannelFragment";
+    // Short label to keep the scrollable tab bar compact (full name "QQ Bot" / "QQ 机器人" is too wide).
     private static final String QQ_TAB_TITLE = "QQ";
     private static final int[] TAB_TITLE_IDS = {
         R.string.botdrop_platform_telegram,

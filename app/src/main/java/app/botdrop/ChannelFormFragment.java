@@ -35,6 +35,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 
 import java.util.Iterator;
+import java.util.regex.Pattern;
 
 /**
  * Base class for channel configuration pages (Telegram/Discord/Feishu/QQ Bot).
@@ -43,7 +44,7 @@ public abstract class ChannelFormFragment extends Fragment {
 
     private static final String LOG_TAG = "ChannelFormFragment";
     private static final String QQBOT_PLUGIN_IDENTIFIER = "sliverp/qqbot";
-    private static final String QQBOT_PLUGIN_IDENTIFIER_FALLBACK = "qqbot";
+    private static final String QQBOT_PLUGIN_ID_FALLBACK = "qqbot";
     private static final String QQBOT_PLUGIN_ENTRY_ID = "qqbot";
     private static final String QQBOT_PLUGIN_INSTALL_COMMAND = "openclaw plugins install @sliverp/qqbot@latest";
     private static final int QQBOT_PLUGIN_LIST_TIMEOUT_SECONDS = 120;
@@ -240,16 +241,6 @@ public abstract class ChannelFormFragment extends Fragment {
     public void onDestroyView() {
         super.onDestroyView();
         hideConnectPendingProgress();
-        if (mShowConnectProgressRunnable != null) {
-            mUiHandler.removeCallbacks(mShowConnectProgressRunnable);
-            mShowConnectProgressRunnable = null;
-        }
-        if (mConnectProgressDialog != null) {
-            if (mConnectProgressDialog.isShowing()) {
-                mConnectProgressDialog.dismiss();
-            }
-            mConnectProgressDialog = null;
-        }
     }
 
     private void openSetupBot() {
@@ -398,12 +389,8 @@ public abstract class ChannelFormFragment extends Fragment {
         if (mConnectProgressDialog != null && mConnectProgressDialog.isShowing()) {
             return;
         }
-        if (!isAdded() || getActivity() == null || getActivity().isFinishing()) {
-            return;
-        }
-
         Activity activity = getActivity();
-        if (activity == null || activity.isFinishing()) {
+        if (!isAdded() || activity == null || activity.isFinishing()) {
             return;
         }
 
@@ -536,9 +523,13 @@ public abstract class ChannelFormFragment extends Fragment {
 
         String lower = output.toLowerCase(java.util.Locale.ROOT);
         return lower.contains(QQBOT_PLUGIN_IDENTIFIER)
-            || lower.contains("@" + QQBOT_PLUGIN_IDENTIFIER)
-            || lower.contains(QQBOT_PLUGIN_IDENTIFIER + "@")
-            || lower.contains(QQBOT_PLUGIN_IDENTIFIER_FALLBACK);
+            || hasStandalonePluginIdentifier(lower, QQBOT_PLUGIN_ID_FALLBACK);
+    }
+
+    private boolean hasStandalonePluginIdentifier(String output, String token) {
+        String escaped = Pattern.quote(token);
+        String boundaryPattern = "(^|[^a-z0-9_./-])" + escaped + "(?=[^a-z0-9_./-]|$)";
+        return java.util.regex.Pattern.compile(boundaryPattern).matcher(output).find();
     }
 
     private boolean isQqBotPluginInstallNoop(BotDropService.CommandResult result) {
@@ -561,8 +552,7 @@ public abstract class ChannelFormFragment extends Fragment {
             || lower.contains("nothing to install")
             || lower.contains("already exists")
             || lower.contains("skipping")
-            || lower.contains("already have")
-            || lower.contains(QQBOT_PLUGIN_IDENTIFIER);
+            || lower.contains("already have");
     }
 
     private void preloadExistingConfig() {
