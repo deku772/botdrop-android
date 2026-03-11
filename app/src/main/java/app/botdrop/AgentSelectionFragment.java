@@ -47,6 +47,8 @@ public class AgentSelectionFragment extends Fragment {
     private static final int TAP_COUNT_THRESHOLD = 10;
     private static final long TAP_WINDOW_MS = 5000;
     private static final long OPENCLAW_VERSION_CACHE_TTL_MS = TimeUnit.HOURS.toMillis(1);
+    private static final int OPENCLAW_VERSION_FETCH_TIMEOUT_SECONDS = 180;
+    private static final int OPENCLAW_VERSION_FETCH_TIMEOUT_SECONDS_RETRY = 300;
     private static final String KEY_OPENCLAW_VERSION_CACHE = "openclaw_versions_cache";
     private static final String KEY_OPENCLAW_VERSION_CACHE_TIME = "openclaw_versions_cache_time";
 
@@ -371,25 +373,11 @@ public class AgentSelectionFragment extends Fragment {
             .create();
         mProgressDialog.show();
 
-        final String[] stepMessages = {
-            getString(R.string.botdrop_stopping_gateway) + "...",
-            getString(R.string.botdrop_installing_update) + "...",
-            getString(R.string.botdrop_finalizing) + "...",
-            getString(R.string.botdrop_starting_gateway) + "...",
-            getString(R.string.botdrop_refreshing_model_list) + "...",
-        };
-
         mBotDropService.updateOpenclaw(installVersion, new BotDropService.UpdateProgressCallback() {
             private int currentStep = -1;
 
             private void advanceTo(String message) {
-                int nextStep = -1;
-                for (int i = 0; i < stepMessages.length; i++) {
-                    if (stepMessages[i].equals(message)) {
-                        nextStep = i;
-                        break;
-                    }
-                }
+                int nextStep = OpenclawUpdateProgress.resolveStepFromMessage(message);
                 if (nextStep < 0) return;
 
                 for (int i = 0; i <= currentStep && i < stepIcons.length; i++) {
@@ -464,6 +452,14 @@ public class AgentSelectionFragment extends Fragment {
     }
 
     private void fetchOpenclawVersions(OpenclawVersionUtils.VersionListCallback cb) {
+        fetchOpenclawVersionsWithTimeout(cb, OPENCLAW_VERSION_FETCH_TIMEOUT_SECONDS, false);
+    }
+
+    private void fetchOpenclawVersionsWithTimeout(
+        OpenclawVersionUtils.VersionListCallback cb,
+        int timeoutSeconds,
+        boolean retried
+    ) {
         if (cb == null) {
             return;
         }
@@ -485,8 +481,20 @@ public class AgentSelectionFragment extends Fragment {
         }
 
         String currentVersion = BotDropService.getOpenclawVersion();
-        mBotDropService.executeCommand(OpenclawVersionUtils.VERSIONS_COMMAND, result -> {
+        mBotDropService.executeCommand(
+            OpenclawVersionUtils.VERSIONS_COMMAND,
+            timeoutSeconds,
+            result -> {
             if (result == null || !result.success) {
+                if (!retried) {
+                    Logger.logWarn(
+                        LOG_TAG,
+                        "OpenClaw versions fetch failed, retrying with longer timeout: " +
+                        OPENCLAW_VERSION_FETCH_TIMEOUT_SECONDS_RETRY + "s"
+                    );
+                    fetchOpenclawVersionsWithTimeout(cb, OPENCLAW_VERSION_FETCH_TIMEOUT_SECONDS_RETRY, true);
+                    return;
+                }
                 if (cachedVersions != null && !cachedVersions.isEmpty()) {
                     cb.onResult(cachedVersions,
                         result == null
@@ -515,7 +523,7 @@ public class AgentSelectionFragment extends Fragment {
 
             persistOpenclawVersionCache(versions);
             cb.onResult(versions, null);
-        });
+            });
     }
 
     private boolean isOpenclawVersionCacheFresh() {
