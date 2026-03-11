@@ -264,7 +264,7 @@ public class AgentSelectionFragment extends Fragment {
         for (int i = 0; i < normalized.size(); i++) {
             String v = normalized.get(i);
             if (!TextUtils.isEmpty(currentVersion) && TextUtils.equals(currentVersion, v)) {
-                labels[i] = getString(R.string.botdrop_openclaw_version, v);
+                labels[i] = getString(R.string.botdrop_openclaw_current_version, v);
             } else {
                 labels[i] = getString(R.string.botdrop_openclaw_version, v);
             }

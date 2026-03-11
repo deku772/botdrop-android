@@ -506,6 +506,7 @@
     <string name="botdrop_failed_to_fetch_versions">Failed to fetch versions</string>
     <string name="botdrop_failed_to_fetch_versions_exit">Failed to fetch versions (exit %1$s)</string>
     <string name="botdrop_openclaw_version_manager_title">OpenClaw Version</string>
+    <string name="botdrop_openclaw_current_version">OpenClaw v%1$s (Current)</string>
     <string name="botdrop_reset_to_latest">Reset to latest</string>
     <string name="botdrop_current_install_version">Current install version: %1$s</string>
     <string name="botdrop_set_to_latest">Set to %1$s</string>

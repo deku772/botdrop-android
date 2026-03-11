@@ -2669,9 +2669,15 @@ public class DashboardActivity extends Activity {
             return;
         }
 
+        String currentVersion = OpenclawVersionUtils.normalizeForSort(BotDropService.getOpenclawVersion());
         String[] labels = new String[normalized.size()];
         for (int i = 0; i < normalized.size(); i++) {
-            labels[i] = OpenclawVersionUtils.VERSION_PREFIX + normalized.get(i);
+            String v = normalized.get(i);
+            if (!TextUtils.isEmpty(currentVersion) && TextUtils.equals(currentVersion, v)) {
+                labels[i] = getString(R.string.botdrop_openclaw_current_version, v);
+            } else {
+                labels[i] = getString(R.string.botdrop_openclaw_version, v);
+            }
         }
 
         mOpenclawVersionManagerDialog = new AlertDialog.Builder(this)
