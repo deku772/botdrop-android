@@ -419,11 +419,15 @@
     <string name="botdrop_owner_id">Owner ID</string>
     <string name="botdrop_open_discord_developers">Open Discord Developers</string>
     <string name="botdrop_connect_start">Connect &amp; Start</string>
+    <string name="botdrop_progress_connecting_channel">Preparing channel setup…</string>
+    <string name="botdrop_progress_checking_qqbot_plugin">Checking QQ Bot plugin…</string>
+    <string name="botdrop_progress_installing_qqbot_plugin">Installing QQ Bot plugin…</string>
+    <string name="botdrop_progress_writing_channel_config">Saving channel configuration…</string>
+    <string name="botdrop_progress_deleting_channel_config">Deleting channel configuration…</string>
     <string name="botdrop_skip_for_now">Skip for now</string>
     <string name="botdrop_delete_channel_config">Delete configuration</string>
     <string name="botdrop_delete_channel_title">Delete %1$s configuration?</string>
     <string name="botdrop_delete_channel_message">This will remove saved %1$s settings from local configuration.</string>
-    <string name="botdrop_channel_config_deleted">Channel configuration removed</string>
     <string name="botdrop_delete_channel_failed">Failed to remove configuration</string>
     <string name="botdrop_feishu_intro">Create a Feishu app and bot, then fill in App ID and App Secret below. See setup guide for details.</string>
     <string name="botdrop_qqbot_intro">Create a bot on the QQ Open Platform, then fill in AppID and AppSecret below.</string>

@@ -13,6 +13,7 @@ import android.os.IBinder;
 import android.graphics.Paint;
 import android.text.Html;
 import android.text.TextUtils;
+import android.view.Gravity;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
@@ -21,10 +22,10 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
+import androidx.annotation.StringRes;
 import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 
@@ -49,7 +50,8 @@ public abstract class ChannelFormFragment extends Fragment {
     private static final String QQBOT_PLUGIN_INSTALL_COMMAND = "openclaw plugins install @sliverp/qqbot@latest";
     private static final int QQBOT_PLUGIN_LIST_TIMEOUT_SECONDS = 120;
     private static final int QQBOT_PLUGIN_INSTALL_TIMEOUT_SECONDS = 300;
-    private static final long CONNECT_PENDING_DIALOG_DELAY_MS = 600L;
+    private static final long CONNECT_PENDING_DIALOG_DELAY_MS = 0L;
+    private static final int CONNECT_SUCCESS_HOLD_MS = 180;
 
     private ChannelConfigMeta mMeta;
     private TextView mOpenSetupBotButton;
@@ -71,6 +73,7 @@ public abstract class ChannelFormFragment extends Fragment {
     private TextView mErrorMessage;
     private TextView mSetupHelpText;
     private AlertDialog mConnectProgressDialog;
+    private TextView mConnectProgressMessage;
     private final Handler mUiHandler = new Handler(Looper.getMainLooper());
     private Runnable mShowConnectProgressRunnable;
 
@@ -294,9 +297,9 @@ public abstract class ChannelFormFragment extends Fragment {
             }
         }
 
-        mConnectButton.setEnabled(false);
         mConnectButton.setText(R.string.botdrop_connecting);
-        showConnectPendingProgressWithDelay();
+        setActionButtonsEnabled(false);
+        showConnectPendingProgressWithMessage(R.string.botdrop_progress_connecting_channel);
 
         if (ChannelConfigMeta.PLATFORM_QQBOT.equals(mMeta.platform)) {
             ensureQqBotPluginInstalledBeforeConfigWrite(token, ownerId, feishuUserId, guildId);
@@ -312,6 +315,8 @@ public abstract class ChannelFormFragment extends Fragment {
         String feishuUserId,
         String guildId
     ) {
+        showConnectPendingProgressWithMessage(R.string.botdrop_progress_writing_channel_config);
+
         boolean success;
         if (ChannelConfigMeta.PLATFORM_DISCORD.equals(mMeta.platform)) {
             success = ChannelSetupHelper.writeChannelConfig(
@@ -361,13 +366,28 @@ public abstract class ChannelFormFragment extends Fragment {
         startGateway();
     }
 
-    private void showConnectPendingProgressWithDelay() {
-        hideConnectPendingProgress();
+    private void showConnectPendingProgressWithMessage(@StringRes int messageRes) {
+        if (!isAdded() || getActivity() == null || getActivity().isFinishing()) {
+            return;
+        }
+
+        if (mConnectProgressDialog != null && mConnectProgressDialog.isShowing()) {
+            if (mConnectProgressMessage != null) {
+                mConnectProgressMessage.setText(messageRes);
+            }
+            return;
+        }
+
+        if (mShowConnectProgressRunnable != null) {
+            mUiHandler.removeCallbacks(mShowConnectProgressRunnable);
+            mShowConnectProgressRunnable = null;
+        }
+
         mShowConnectProgressRunnable = () -> {
             if (!isAdded() || getActivity() == null || getActivity().isFinishing()) {
                 return;
             }
-            showConnectProgressDialog();
+            showConnectProgressDialog(messageRes);
         };
         mUiHandler.postDelayed(mShowConnectProgressRunnable, CONNECT_PENDING_DIALOG_DELAY_MS);
     }
@@ -383,10 +403,14 @@ public abstract class ChannelFormFragment extends Fragment {
             }
             mConnectProgressDialog = null;
         }
+        mConnectProgressMessage = null;
     }
 
-    private void showConnectProgressDialog() {
+    private void showConnectProgressDialog(@StringRes int messageRes) {
         if (mConnectProgressDialog != null && mConnectProgressDialog.isShowing()) {
+            if (mConnectProgressMessage != null) {
+                mConnectProgressMessage.setText(messageRes);
+            }
             return;
         }
         Activity activity = getActivity();
@@ -407,10 +431,11 @@ public abstract class ChannelFormFragment extends Fragment {
         progressParams.rightMargin = (int) (16 * getResources().getDisplayMetrics().density);
         content.addView(progressBar, progressParams);
 
-        TextView statusText = new TextView(activity);
-        statusText.setText(R.string.botdrop_connecting);
-        statusText.setTextSize(16f);
-        content.addView(statusText);
+        mConnectProgressMessage = new TextView(activity);
+        mConnectProgressMessage.setText(messageRes);
+        mConnectProgressMessage.setTextSize(16f);
+        mConnectProgressMessage.setGravity(Gravity.CENTER_VERTICAL);
+        content.addView(mConnectProgressMessage);
 
         mConnectProgressDialog = new AlertDialog.Builder(activity)
             .setCancelable(false)
@@ -433,9 +458,11 @@ public abstract class ChannelFormFragment extends Fragment {
             return;
         }
 
+        showConnectPendingProgressWithMessage(R.string.botdrop_progress_checking_qqbot_plugin);
+
         if (isQqBotPluginConfiguredInLocalConfig()) {
-            hideConnectPendingProgress();
             Logger.logInfo(LOG_TAG, "QQ Bot plugin entry already exists in local config");
+            showConnectPendingProgressWithMessage(R.string.botdrop_starting_gateway);
             writeConfigAndStartGateway(token, ownerId, feishuUserId, guildId);
             return;
         }
@@ -447,11 +474,13 @@ public abstract class ChannelFormFragment extends Fragment {
             }
 
             if (isQqBotPluginInstalled(listResult) || isQqBotPluginConfiguredInLocalConfig()) {
-                hideConnectPendingProgress();
                 Logger.logInfo(LOG_TAG, "QQ Bot plugin already installed, start gateway directly");
+                showConnectPendingProgressWithMessage(R.string.botdrop_starting_gateway);
                 writeConfigAndStartGateway(token, ownerId, feishuUserId, guildId);
                 return;
             }
+
+            showConnectPendingProgressWithMessage(R.string.botdrop_progress_installing_qqbot_plugin);
 
             mService.executeCommand(QQBOT_PLUGIN_INSTALL_COMMAND, QQBOT_PLUGIN_INSTALL_TIMEOUT_SECONDS, installResult -> {
                 if (!isAdded() || getActivity() == null || getActivity().isFinishing()) {
@@ -460,8 +489,8 @@ public abstract class ChannelFormFragment extends Fragment {
                 }
 
                 if (installResult.success || isQqBotPluginInstallNoop(installResult)) {
-                    hideConnectPendingProgress();
                     Logger.logInfo(LOG_TAG, "QQ Bot plugin installation completed");
+                    showConnectPendingProgressWithMessage(R.string.botdrop_starting_gateway);
                     writeConfigAndStartGateway(token, ownerId, feishuUserId, guildId);
                     return;
                 }
@@ -785,17 +814,17 @@ public abstract class ChannelFormFragment extends Fragment {
 
         if (!ChannelSetupHelper.removeChannelConfig(mMeta.platform)) {
             showError(getString(R.string.botdrop_delete_channel_failed));
+            resetButton();
             return;
         }
 
+        showConnectPendingProgressWithMessage(R.string.botdrop_progress_deleting_channel_config);
         mHasExistingConfig = false;
+        setActionButtonsEnabled(false);
         clearConfigInputs();
         mErrorMessage.setVisibility(View.GONE);
-
-        Context ctx = getContext();
-        if (ctx != null) {
-            Toast.makeText(ctx, R.string.botdrop_channel_config_deleted, Toast.LENGTH_SHORT).show();
-        }
+        configureActionButtons();
+        showConnectPendingProgressWithMessage(R.string.botdrop_gateway_restarting);
 
         restartGatewayAndExit();
     }
@@ -803,13 +832,11 @@ public abstract class ChannelFormFragment extends Fragment {
     private void restartGatewayAndExit() {
         if (!mBound || mService == null) {
             showError(getString(R.string.botdrop_service_not_ready));
+            configureActionButtons();
+            setActionButtonsEnabled(true);
+            resetButton();
             finishChannelSetup();
             return;
-        }
-
-        Context ctx = getContext();
-        if (ctx != null) {
-            Toast.makeText(ctx, R.string.botdrop_gateway_restarting, Toast.LENGTH_SHORT).show();
         }
 
         mService.restartGateway(result -> {
@@ -834,7 +861,12 @@ public abstract class ChannelFormFragment extends Fragment {
                         );
                     }
                     showError(getString(R.string.botdrop_error_start_gateway, errorMsg));
+                    configureActionButtons();
+                    setActionButtonsEnabled(true);
+                    resetButton();
+                    return;
                 }
+                hideConnectPendingProgress();
                 finishChannelSetup();
             });
         });
@@ -863,6 +895,8 @@ public abstract class ChannelFormFragment extends Fragment {
             return;
         }
 
+        showConnectPendingProgressWithMessage(R.string.botdrop_starting_gateway);
+
         Logger.logInfo(LOG_TAG, "Starting gateway...");
         mService.startGateway(result -> {
             if (!isAdded() || getActivity() == null || getActivity().isFinishing()) {
@@ -880,20 +914,23 @@ public abstract class ChannelFormFragment extends Fragment {
                 }
 
                 if (result.success) {
-                Logger.logInfo(LOG_TAG, "Gateway started successfully");
-                Context ctx = getContext();
-                if (ctx != null) {
-                    Toast.makeText(
-                        ctx,
-                        R.string.botdrop_connected_gateway_starting,
-                        Toast.LENGTH_LONG
-                    ).show();
-                }
-
-                    SetupActivity setupActivity = (SetupActivity) getActivity();
-                    if (setupActivity != null && !setupActivity.isFinishing()) {
-                        setupActivity.goToNextStep();
+                    Logger.logInfo(LOG_TAG, "Gateway started successfully");
+                    if (mConnectProgressMessage != null) {
+                        mConnectProgressMessage.setText(R.string.botdrop_connected_gateway_starting);
                     }
+                    mUiHandler.postDelayed(
+                        () -> {
+                            if (!isAdded() || getActivity() == null || getActivity().isFinishing()) {
+                                return;
+                            }
+                            SetupActivity setupActivity = (SetupActivity) getActivity();
+                            if (setupActivity != null && !setupActivity.isFinishing()) {
+                                hideConnectPendingProgress();
+                                setupActivity.goToNextStep();
+                            }
+                        },
+                        CONNECT_SUCCESS_HOLD_MS
+                    );
                 } else {
                     Logger.logError(LOG_TAG, "Failed to start gateway: " + result.stderr);
                     String errorMsg = result.stderr;
@@ -950,6 +987,20 @@ public abstract class ChannelFormFragment extends Fragment {
         hideConnectPendingProgress();
         mConnectButton.setEnabled(true);
         mConnectButton.setText(R.string.botdrop_connect_start);
+        setActionButtonsEnabled(true);
+        mConnectProgressMessage = null;
+    }
+
+    private void setActionButtonsEnabled(boolean enabled) {
+        if (mConnectButton != null) {
+            mConnectButton.setEnabled(enabled);
+        }
+        if (mDeleteButton != null) {
+            mDeleteButton.setEnabled(enabled);
+        }
+        if (mSkipButton != null) {
+            mSkipButton.setEnabled(enabled);
+        }
     }
 
     protected abstract String getPlatformId();

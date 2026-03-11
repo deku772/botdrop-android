@@ -398,11 +398,15 @@
     <string name="botdrop_owner_id">所有者 ID</string>
     <string name="botdrop_open_discord_developers">打开 Discord Developers</string>
     <string name="botdrop_connect_start">连接并启动</string>
+    <string name="botdrop_progress_connecting_channel">正在准备频道配置…</string>
+    <string name="botdrop_progress_checking_qqbot_plugin">正在检查 QQ Bot 插件…</string>
+    <string name="botdrop_progress_installing_qqbot_plugin">正在安装 QQ Bot 插件…</string>
+    <string name="botdrop_progress_writing_channel_config">正在写入频道配置…</string>
+    <string name="botdrop_progress_deleting_channel_config">正在删除频道配置…</string>
     <string name="botdrop_skip_for_now">暂时跳过</string>
     <string name="botdrop_delete_channel_config">删除配置</string>
     <string name="botdrop_delete_channel_title">删除%1$s配置？</string>
     <string name="botdrop_delete_channel_message">将移除本地配置中的%1$s已保存设置。</string>
-    <string name="botdrop_channel_config_deleted">已移除该频道配置</string>
     <string name="botdrop_delete_channel_failed">移除配置失败</string>
     <string name="botdrop_feishu_intro">创建飞书应用和机器人，然后在下方填写 App ID 和 App Secret。详情请查看设置指南。</string>
     <string name="botdrop_qqbot_intro">在 QQ 开放平台创建机器人，将 AppID 和 AppSecret 填入下方。</string>
