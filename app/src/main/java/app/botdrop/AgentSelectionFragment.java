@@ -27,6 +27,7 @@ import com.termux.shared.logger.Logger;
 import org.json.JSONArray;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -55,7 +56,7 @@ public class AgentSelectionFragment extends Fragment {
     private BotDropService mBotDropService;
     private boolean mServiceBound = false;
     private AlertDialog mOpenclawVersionManagerDialog;
-    private AlertDialog mProgressDialog;
+    private StepProgressDialog mProgressDialog;
     private boolean mOpenclawVersionActionInProgress;
     private long mOpenclawVersionRequestId;
     private int mTapCount = 0;
@@ -355,55 +356,45 @@ public class AgentSelectionFragment extends Fragment {
             return;
         }
 
-        // Reuse the step-based progress dialog from Dashboard
-        View dialogView = LayoutInflater.from(ctx).inflate(R.layout.dialog_openclaw_update, null);
-        android.widget.TextView[] stepIcons = {
-            dialogView.findViewById(R.id.update_step_0_icon),
-            dialogView.findViewById(R.id.update_step_1_icon),
-            dialogView.findViewById(R.id.update_step_2_icon),
-            dialogView.findViewById(R.id.update_step_3_icon),
-            dialogView.findViewById(R.id.update_step_4_icon),
-        };
-        android.widget.TextView statusMessage = dialogView.findViewById(R.id.update_status_message);
-
-        mProgressDialog = new AlertDialog.Builder(ctx)
-            .setTitle(R.string.botdrop_install)
-            .setView(dialogView)
-            .setCancelable(false)
-            .create();
+        mProgressDialog = StepProgressDialog.create(
+            ctx,
+            R.string.botdrop_install,
+            Arrays.asList(
+                getString(R.string.botdrop_stopping_gateway),
+                getString(R.string.botdrop_installing_update),
+                getString(R.string.botdrop_finalizing),
+                getString(R.string.botdrop_starting_gateway),
+                getString(R.string.botdrop_refreshing_model_list)
+            ),
+            getString(R.string.botdrop_may_take_a_few_minutes)
+        );
         mProgressDialog.show();
 
         mBotDropService.updateOpenclaw(installVersion, new BotDropService.UpdateProgressCallback() {
-            private int currentStep = -1;
-
-            private void advanceTo(String message) {
-                int nextStep = OpenclawUpdateProgress.resolveStepFromMessage(message);
-                if (nextStep < 0) return;
-
-                for (int i = 0; i <= currentStep && i < stepIcons.length; i++) {
-                    stepIcons[i].setText("\u2713");
-                }
-                if (nextStep < stepIcons.length) {
-                    stepIcons[nextStep].setText("\u25CF");
-                }
-                currentStep = nextStep;
-            }
-
             @Override
             public void onStepStart(String message) {
-                advanceTo(message);
+                if (mProgressDialog == null) {
+                    return;
+                }
+                int nextStep = OpenclawUpdateProgress.resolveStepFromMessage(message);
+                if (nextStep < 0) {
+                    mProgressDialog.setStatus(message);
+                    return;
+                }
+                mProgressDialog.setStep(nextStep);
+                mProgressDialog.setStatus(message);
             }
 
             @Override
             public void onError(String error) {
                 if (mProgressDialog != null && mProgressDialog.isShowing()) {
-                    statusMessage.setText(getString(R.string.botdrop_install_failed, error));
-                    mProgressDialog.setButton(AlertDialog.BUTTON_NEGATIVE, getString(R.string.botdrop_close),
-                        (d, w) -> {
-                            d.dismiss();
+                    mProgressDialog.showError(
+                        getString(R.string.botdrop_install_failed, error),
+                        () -> {
                             mProgressDialog = null;
                             mOpenclawVersionActionInProgress = false;
-                        });
+                        }
+                    );
                 } else {
                     mOpenclawVersionActionInProgress = false;
                 }
@@ -411,10 +402,11 @@ public class AgentSelectionFragment extends Fragment {
 
             @Override
             public void onComplete(String version) {
-                for (android.widget.TextView icon : stepIcons) {
-                    icon.setText("\u2713");
+                if (mProgressDialog == null) {
+                    mOpenclawVersionActionInProgress = false;
+                    return;
                 }
-                statusMessage.setText(getString(
+                mProgressDialog.complete(getString(
                     R.string.botdrop_installation_complete_with_version,
                     TextUtils.isEmpty(version) ? getString(R.string.botdrop_unknown) : version
                 ));
