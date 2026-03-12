@@ -22,6 +22,7 @@ import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -30,6 +31,7 @@ import androidx.appcompat.app.AlertDialog;
 import androidx.fragment.app.Fragment;
 
 import com.termux.R;
+import com.termux.app.AnalyticsManager;
 import com.termux.shared.logger.Logger;
 
 import org.json.JSONArray;
@@ -250,6 +252,10 @@ public abstract class ChannelFormFragment extends Fragment {
         if (mMeta == null || TextUtils.isEmpty(mMeta.setupBotUrl)) {
             return;
         }
+        Context context = getContext();
+        if (context != null) {
+            AnalyticsManager.logEvent(context, "channel_setup_bot_tap", "platform", mMeta.platform);
+        }
         Intent browserIntent = new Intent(Intent.ACTION_VIEW, Uri.parse(mMeta.setupBotUrl));
         startActivity(browserIntent);
     }
@@ -267,6 +273,7 @@ public abstract class ChannelFormFragment extends Fragment {
         String guildId = mDiscordGuildInput != null ? mDiscordGuildInput.getText().toString().trim() : "";
 
         if (!mMeta.isTokenValid(token)) {
+            AnalyticsManager.logEvent(requireContext(), "channel_connect_invalid", "reason", "invalid_token");
             if (ChannelConfigMeta.PLATFORM_TELEGRAM.equals(mMeta.platform)) {
                 showError(getString(R.string.botdrop_error_enter_valid_bot_token));
             } else if (ChannelConfigMeta.PLATFORM_FEISHU.equals(mMeta.platform)) {
@@ -280,6 +287,7 @@ public abstract class ChannelFormFragment extends Fragment {
         }
 
         if (!mMeta.isOwnerValid(ownerId)) {
+            AnalyticsManager.logEvent(requireContext(), "channel_connect_invalid", "reason", "invalid_owner");
             if (ChannelConfigMeta.PLATFORM_FEISHU.equals(mMeta.platform)) {
                 showError(getString(R.string.botdrop_error_enter_app_secret));
             } else if (ChannelConfigMeta.PLATFORM_QQBOT.equals(mMeta.platform)) {
@@ -292,11 +300,16 @@ public abstract class ChannelFormFragment extends Fragment {
 
         if (ChannelConfigMeta.PLATFORM_DISCORD.equals(mMeta.platform)) {
             if (!mMeta.isDiscordGuildIdValid(guildId)) {
+                AnalyticsManager.logEvent(requireContext(), "channel_connect_invalid", "reason", "invalid_guild");
                 showError(getString(R.string.botdrop_error_enter_guild_id));
                 return;
             }
         }
 
+        Context context = getContext();
+        if (context != null) {
+            AnalyticsManager.logEvent(context, "channel_connect_tap", "platform", mMeta.platform);
+        }
         mConnectButton.setText(R.string.botdrop_connecting);
         setActionButtonsEnabled(false);
         showConnectPendingProgressWithMessage(R.string.botdrop_progress_connecting_channel);
@@ -316,6 +329,7 @@ public abstract class ChannelFormFragment extends Fragment {
         String guildId
     ) {
         showConnectPendingProgressWithMessage(R.string.botdrop_progress_writing_channel_config);
+        Context context = getContext();
 
         boolean success;
         if (ChannelConfigMeta.PLATFORM_DISCORD.equals(mMeta.platform)) {
@@ -342,9 +356,16 @@ public abstract class ChannelFormFragment extends Fragment {
             );
         }
         if (!success) {
+            if (context != null) {
+                AnalyticsManager.logEvent(context, "channel_connect_failed", "platform", mMeta.platform);
+            }
             showError(getString(R.string.botdrop_error_write_config));
             resetButton();
             return;
+        }
+
+        if (context != null) {
+            AnalyticsManager.logEvent(context, "channel_connect_saved", "platform", mMeta.platform);
         }
 
         if (ChannelConfigMeta.PLATFORM_TELEGRAM.equals(mMeta.platform)) {
@@ -889,6 +910,7 @@ public abstract class ChannelFormFragment extends Fragment {
 
     private void startGateway() {
         if (!mBound || mService == null) {
+            AnalyticsManager.logEvent(requireContext(), "channel_gateway_failed", "platform", mMeta.platform);
             showError(getString(R.string.botdrop_service_not_ready));
             hideConnectPendingProgress();
             resetButton();
@@ -915,6 +937,15 @@ public abstract class ChannelFormFragment extends Fragment {
 
                 if (result.success) {
                     Logger.logInfo(LOG_TAG, "Gateway started successfully");
+                    AnalyticsManager.logEvent(requireContext(), "channel_gateway_started", "platform", mMeta.platform);
+                    Context ctx = getContext();
+                    if (ctx != null) {
+                        Toast.makeText(
+                            ctx,
+                            R.string.botdrop_connected_gateway_starting,
+                            Toast.LENGTH_LONG
+                        ).show();
+                    }
                     if (mConnectProgressMessage != null) {
                         mConnectProgressMessage.setText(R.string.botdrop_connected_gateway_starting);
                     }
@@ -933,6 +964,7 @@ public abstract class ChannelFormFragment extends Fragment {
                     );
                 } else {
                     Logger.logError(LOG_TAG, "Failed to start gateway: " + result.stderr);
+                    AnalyticsManager.logEvent(requireContext(), "channel_gateway_failed", "platform", mMeta.platform);
                     String errorMsg = result.stderr;
                     if (TextUtils.isEmpty(errorMsg)) {
                         errorMsg = result.stdout;
@@ -961,13 +993,17 @@ public abstract class ChannelFormFragment extends Fragment {
             .setMessage(getString(R.string.botdrop_skip_channel_setup_message, platformLabel))
             .setPositiveButton(R.string.botdrop_skip, (dialog, which) -> {
                 Logger.logInfo(LOG_TAG, "User skipped channel setup");
+                AnalyticsManager.logEvent(requireContext(), "channel_skip_confirmed", "platform", mMeta.platform);
                 SetupActivity activity = (SetupActivity) getActivity();
                 if (activity == null || activity.isFinishing()) {
                     return;
                 }
                 activity.goToNextStep();
             })
-            .setNegativeButton(R.string.botdrop_cancel, (dialog, which) -> dialog.dismiss())
+            .setNegativeButton(R.string.botdrop_cancel, (dialog, which) -> {
+                AnalyticsManager.logEvent(requireContext(), "channel_skip_cancelled", "platform", mMeta.platform);
+                dialog.dismiss();
+            })
             .show();
     }
 
@@ -975,6 +1011,7 @@ public abstract class ChannelFormFragment extends Fragment {
         if (!isAdded() || getActivity() == null || getActivity().isFinishing()) {
             return;
         }
+        AnalyticsManager.logEvent(requireContext(), "channel_finish_existing", "platform", mMeta.platform);
         getActivity().finish();
     }
 

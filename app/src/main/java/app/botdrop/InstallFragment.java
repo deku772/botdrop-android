@@ -19,6 +19,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 import com.termux.R;
+import com.termux.app.AnalyticsManager;
 import com.termux.shared.logger.Logger;
 
 import org.json.JSONArray;
@@ -109,6 +110,7 @@ public class InstallFragment extends Fragment {
         mRetryButton = view.findViewById(R.id.install_retry_button);
 
         mRetryButton.setOnClickListener(v -> {
+            AnalyticsManager.logEvent(requireContext(), "install_retry_tap");
             mErrorContainer.setVisibility(View.GONE);
             resetSteps();
             startInstallation();
@@ -186,6 +188,7 @@ public class InstallFragment extends Fragment {
         }
 
         Logger.logInfo(LOG_TAG, "Starting OpenClaw installation");
+        AnalyticsManager.logEvent(requireContext(), "install_started");
 
         mService.installOpenclaw(new BotDropService.InstallProgressCallback() {
             @Override
@@ -203,6 +206,7 @@ public class InstallFragment extends Fragment {
             @Override
             public void onError(String error) {
                 Logger.logError(LOG_TAG, "Installation failed: " + error);
+                AnalyticsManager.logEvent(requireContext(), "install_failed");
                 showError(error);
             }
 
@@ -210,6 +214,7 @@ public class InstallFragment extends Fragment {
             public void onComplete() {
                 Logger.logInfo(LOG_TAG, "Installation complete");
                 if (!isAdded()) return;
+                AnalyticsManager.logEvent(requireContext(), "install_completed");
 
                 // Get and display version
                 String version = BotDropService.getOpenclawVersion();

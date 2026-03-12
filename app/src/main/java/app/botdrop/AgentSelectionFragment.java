@@ -21,6 +21,7 @@ import androidx.annotation.Nullable;
 import androidx.fragment.app.Fragment;
 
 import com.termux.R;
+import com.termux.app.AnalyticsManager;
 import com.termux.app.TermuxInstaller;
 import com.termux.shared.logger.Logger;
 
@@ -96,9 +97,11 @@ public class AgentSelectionFragment extends Fragment {
         installButton.setText(isOpenclawInstalled ? R.string.botdrop_open : R.string.botdrop_install);
         installButton.setOnClickListener(v -> {
             if (isOpenclawInstalled) {
+                AnalyticsManager.logEvent(requireContext(), "agent_open_dashboard_tap");
                 Logger.logInfo(LOG_TAG, "OpenClaw already installed, opening dashboard");
                 openDashboard();
             } else {
+                AnalyticsManager.logEvent(requireContext(), "agent_install_tap");
                 Logger.logInfo(LOG_TAG, "OpenClaw selected for installation");
                 SetupActivity activity = (SetupActivity) getActivity();
                 if (activity != null && !activity.isFinishing()) {
@@ -107,10 +110,14 @@ public class AgentSelectionFragment extends Fragment {
             }
         });
 
-        versionManagerButton.setOnClickListener(v -> showOpenclawVersionListDialog());
+        versionManagerButton.setOnClickListener(v -> {
+            AnalyticsManager.logEvent(requireContext(), "agent_version_manager_tap");
+            showOpenclawVersionListDialog();
+        });
 
         // URL click handlers
         view.findViewById(R.id.agent_openclaw_url).setOnClickListener(v -> {
+            AnalyticsManager.logEvent(requireContext(), "agent_openclaw_link_tap");
             startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse("https://openclaw.ai")));
         });
 
@@ -369,6 +376,7 @@ public class AgentSelectionFragment extends Fragment {
             getString(R.string.botdrop_may_take_a_few_minutes)
         );
         mProgressDialog.show();
+        AnalyticsManager.logEvent(ctx, "agent_version_install_started");
 
         mBotDropService.updateOpenclaw(installVersion, new BotDropService.UpdateProgressCallback() {
             @Override
@@ -387,6 +395,7 @@ public class AgentSelectionFragment extends Fragment {
 
             @Override
             public void onError(String error) {
+                AnalyticsManager.logEvent(requireContext(), "agent_version_install_failed");
                 if (mProgressDialog != null && mProgressDialog.isShowing()) {
                     mProgressDialog.showError(
                         getString(R.string.botdrop_install_failed, error),
@@ -406,6 +415,7 @@ public class AgentSelectionFragment extends Fragment {
                     mOpenclawVersionActionInProgress = false;
                     return;
                 }
+                AnalyticsManager.logEvent(requireContext(), "agent_version_install_completed");
                 mProgressDialog.complete(getString(
                     R.string.botdrop_installation_complete_with_version,
                     TextUtils.isEmpty(version) ? getString(R.string.botdrop_unknown) : version
