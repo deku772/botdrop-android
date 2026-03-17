@@ -205,11 +205,35 @@ public class OpenclawVersionUtilsTest {
     }
 
     @Test
+    public void testBuildModelListCommand() {
+        assertEquals(OpenclawVersionUtils.MODEL_LIST_COMMAND, OpenclawVersionUtils.buildModelListCommand());
+        assertEquals(
+            "BOTDROP_TRACE_NPM_REGISTRY=1 " + OpenclawVersionUtils.MODEL_LIST_COMMAND,
+            OpenclawVersionUtils.buildModelListCommand(true)
+        );
+    }
+
+    @Test
     public void testBuildNpmAwareCommand_prefersMirrorForCnExit() {
         String command = OpenclawVersionUtils.buildNpmAwareCommand("npm install -g openclaw@latest");
 
         assertTrue(command.contains("country=\"$(curl -m 2 -fsSL https://ipinfo.io/country"));
         assertTrue(command.contains("if [ \"$country\" = \"CN\" ] && [ \"$npmmirror_probe\" = \"200\" ]; then"));
         assertTrue(command.contains("resolved=\"$cn_registry\""));
+        assertFalse(command.contains("tencent_registry"));
+    }
+
+    @Test
+    public void testBuildNpmAwareCommand_keepsRegistryCache() {
+        String command = OpenclawVersionUtils.buildNpmAwareCommand("npm view openclaw version");
+
+        assertTrue(command.contains("cache_file=\"$HOME/.botdrop_npm_registry_cache\""));
+        assertTrue(command.contains("cache_ttl_seconds=86400"));
+        assertTrue(command.contains(
+            "    } > \"$cache_file\"\n"
+                + "  fi\n"
+                + "\n"
+                + "  if [ -z \"$resolved\" ]; then\n"));
+        assertFalse(command.contains("botdrop_npm_trace()"));
     }
 }

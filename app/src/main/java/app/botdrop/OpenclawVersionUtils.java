@@ -19,6 +19,7 @@ public final class OpenclawVersionUtils {
     public static final String VERSION_PREFIX = "openclaw@";
     public static final String DEFAULT_NPM_REGISTRY = "https://registry.npmjs.org/";
     public static final String CN_NPM_REGISTRY = "https://registry.npmmirror.com/";
+    public static final String MODEL_LIST_COMMAND = "openclaw models list --all --plain";
     private static final String BOTDROP_APT_SOURCE_LINE =
         "deb [trusted=yes] https://zhixianio.github.io/botdrop-packages/ stable main";
     private static final String BOTDROP_GITLAB_APT_SOURCE_LINE =
@@ -236,6 +237,14 @@ public final class OpenclawVersionUtils {
             + "NPM_CONFIG_REGISTRY=\"$(botdrop_resolve_npm_registry)\"\n"
             + "export NPM_CONFIG_REGISTRY\n"
             + buildNodeOptionsExportCommand(oldSpaceMb);
+    }
+
+    public static String buildModelListCommand() {
+        return buildModelListCommand(false);
+    }
+
+    public static String buildModelListCommand(boolean enableTrace) {
+        return enableTrace ? "BOTDROP_TRACE_NPM_REGISTRY=1 " + MODEL_LIST_COMMAND : MODEL_LIST_COMMAND;
     }
 
     /**

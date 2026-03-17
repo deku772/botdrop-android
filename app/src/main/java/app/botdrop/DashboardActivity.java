@@ -93,7 +93,7 @@ public class DashboardActivity extends Activity {
     public static final String NOTIFICATION_CHANNEL_ID = "botdrop_gateway";
     private static final int STATUS_REFRESH_INTERVAL_MS = 5000; // 5 seconds
     private static final int ERROR_CHECK_INTERVAL_MS = 15000; // 15 seconds
-    private static final String MODEL_LIST_COMMAND = "openclaw models list --all --plain";
+    private static final String MODEL_LIST_COMMAND = OpenclawModelListUtils.buildPreferredModelListCommand(true);
     private static final String MODEL_PREFS_NAME = "openclaw_model_cache_v1";
     private static final String MODEL_CACHE_KEY_PREFIX = "models_by_version_";
     private static final int GATEWAY_LOG_TAIL_LINES = 300;
