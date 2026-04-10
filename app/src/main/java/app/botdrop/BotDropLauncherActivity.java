@@ -10,6 +10,7 @@ import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.PowerManager;
+import android.os.Environment;
 import android.provider.Settings;
 import android.view.View;
 import android.widget.Button;
@@ -43,6 +44,7 @@ public class BotDropLauncherActivity extends Activity {
     private static final String LOG_TAG = "BotDropLauncherActivity";
     private static final int REQUEST_CODE_NOTIFICATION_SETTINGS = 1001;
     private static final int REQUEST_CODE_BATTERY_OPTIMIZATION = 1002;
+    private static final int REQUEST_CODE_ALL_FILES_ACCESS = 1003;
     private static final String PREFS_NAME = "botdrop_launcher";
     private static final String PREF_ONBOARDING_CONTINUE = "onboarding_continue_clicked";
 
@@ -52,10 +54,12 @@ public class BotDropLauncherActivity extends Activity {
     private TextView mStatusText;
     private Button mNotificationButton;
     private Button mBatteryButton;
+    private Button mStorageButton;
     private Button mBackgroundSettingsButton;
     private Button mContinueButton;
     private TextView mNotificationStatus;
     private TextView mBatteryStatus;
+    private TextView mStorageStatus;
     private TextView mBackgroundHintText;
 
     private Handler mHandler = new Handler(Looper.getMainLooper());
@@ -73,10 +77,12 @@ public class BotDropLauncherActivity extends Activity {
         mStatusText = findViewById(R.id.launcher_status_text);
         mNotificationButton = findViewById(R.id.btn_notification_permission);
         mBatteryButton = findViewById(R.id.btn_battery_permission);
+        mStorageButton = findViewById(R.id.btn_storage_permission);
         mBackgroundSettingsButton = findViewById(R.id.btn_background_settings);
         mContinueButton = findViewById(R.id.btn_continue);
         mNotificationStatus = findViewById(R.id.notification_status);
         mBatteryStatus = findViewById(R.id.battery_status);
+        mStorageStatus = findViewById(R.id.storage_status);
         mBackgroundHintText = findViewById(R.id.background_hint_text);
         mUpdateManagementDisabled = BundledOpenclawUtils.shouldDisableUpdateManagement(this);
 
@@ -98,6 +104,10 @@ public class BotDropLauncherActivity extends Activity {
         mBatteryButton.setOnClickListener(v -> {
             AnalyticsManager.logEvent(this, "launcher_battery_tap");
             requestBatteryOptimization();
+        });
+        mStorageButton.setOnClickListener(v -> {
+            AnalyticsManager.logEvent(this, "launcher_storage_tap");
+            requestStoragePermission();
         });
         mBackgroundSettingsButton.setOnClickListener(v -> {
             AnalyticsManager.logEvent(this, "launcher_background_tap");
@@ -218,6 +228,42 @@ public class BotDropLauncherActivity extends Activity {
     }
 
     /**
+     * Request MANAGE_EXTERNAL_STORAGE permission for Android 11+.
+     * This is required for proot to manage Linux rootfs and bot data files.
+     */
+    private void requestStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            Logger.logInfo(LOG_TAG, "Requesting MANAGE_EXTERNAL_STORAGE permission");
+            try {
+                Intent intent = new Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION);
+                intent.setData(Uri.parse("package:" + getPackageName()));
+                startActivityForResult(intent, REQUEST_CODE_ALL_FILES_ACCESS);
+            } catch (Exception e) {
+                // Some devices don't support the exact package intent, fallback to generic
+                Logger.logWarn(LOG_TAG, "Failed to open app-specific storage settings, trying generic: " + e.getMessage());
+                try {
+                    Intent intent = new Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION);
+                    startActivityForResult(intent, REQUEST_CODE_ALL_FILES_ACCESS);
+                } catch (Exception e2) {
+                    Logger.logError(LOG_TAG, "Failed to open storage settings: " + e2.getMessage());
+                }
+            }
+        }
+    }
+
+    /**
+     * Check if storage permission is granted.
+     * Android 11+: MANAGE_EXTERNAL_STORAGE via Environment.isExternalStorageManager()
+     * Android 10 and below: automatically granted
+     */
+    private boolean isStoragePermissionGranted() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            return Environment.isExternalStorageManager();
+        }
+        return true;
+    }
+
+    /**
      * Open OEM/system pages that commonly control background throttling.
      * This cannot be fully automated across all OEMs, but we can take the user to the right place quickly.
      */
@@ -280,6 +326,13 @@ public class BotDropLauncherActivity extends Activity {
                 Logger.logWarn(LOG_TAG, "Battery optimization exemption denied");
             }
             updatePermissionStatus();
+        } else if (requestCode == REQUEST_CODE_ALL_FILES_ACCESS) {
+            if (isStoragePermissionGranted()) {
+                Logger.logInfo(LOG_TAG, "Storage permission granted");
+            } else {
+                Logger.logWarn(LOG_TAG, "Storage permission denied");
+            }
+            updatePermissionStatus();
         }
     }
 
@@ -288,6 +341,7 @@ public class BotDropLauncherActivity extends Activity {
     private void updatePermissionStatus() {
         boolean notifGranted = areNotificationsEnabled();
         boolean batteryExempt = isBatteryOptimizationExempt();
+        boolean storageGranted = isStoragePermissionGranted();
         int backgroundStatus = getRestrictBackgroundStatus();
 
         // Notification status
@@ -314,6 +368,29 @@ public class BotDropLauncherActivity extends Activity {
             mBatteryButton.setText(R.string.botdrop_allow);
         }
 
+        // Storage status
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            mStorageButton.setVisibility(View.VISIBLE);
+            mStorageStatus.setVisibility(storageGranted ? View.VISIBLE : View.GONE);
+            if (storageGranted) {
+                mStorageStatus.setText("✓");
+                mStorageButton.setEnabled(false);
+                mStorageButton.setText(R.string.botdrop_granted);
+            } else {
+                mStorageButton.setEnabled(true);
+                mStorageButton.setText(R.string.botdrop_allow);
+            }
+        } else {
+            // Android 10 and below: storage permission auto-granted, hide the row
+            mStorageButton.setVisibility(View.GONE);
+            mStorageStatus.setVisibility(View.GONE);
+            // Also hide the parent row — find the storage permission LinearLayout
+            // by walking up from the button
+            View storageRow = (View) mStorageButton.getParent();
+            if (storageRow != null) storageRow.setVisibility(View.GONE);
+            storageGranted = true;
+        }
+
         // Background hint status (informational)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             if (backgroundStatus == ConnectivityManager.RESTRICT_BACKGROUND_STATUS_ENABLED) {
@@ -325,8 +402,8 @@ public class BotDropLauncherActivity extends Activity {
             }
         }
 
-        // Enable continue when both handled
-        mContinueButton.setEnabled(notifGranted && batteryExempt);
+        // Enable continue when all required permissions are granted
+        mContinueButton.setEnabled(notifGranted && batteryExempt && storageGranted);
     }
 
     // --- Routing ---
@@ -341,41 +418,21 @@ public class BotDropLauncherActivity extends Activity {
             return;
         }
 
-        // Check 2: OpenClaw installed?
-        if (!BotDropService.isOpenclawInstalled()) {
-            Logger.logInfo(LOG_TAG, "OpenClaw not installed, routing to agent selection");
+        // Check 2: AstrBot installed?
+        if (!BotDropService.isAstrBotInstalled()) {
+            Logger.logInfo(LOG_TAG, "AstrBot not installed, routing to setup");
             mStatusText.setText(R.string.botdrop_setup_required);
 
             Intent intent = new Intent(this, SetupActivity.class);
-            intent.putExtra(SetupActivity.EXTRA_START_STEP, SetupActivity.STEP_AGENT_SELECT);
+            intent.putExtra(SetupActivity.EXTRA_START_STEP, SetupActivity.STEP_INSTALL);
             startActivity(intent);
             finish();
             return;
         }
 
-        // Check 3: OpenClaw configured (API key)?
-        if (!BotDropService.isOpenclawConfigured()) {
-            Logger.logInfo(LOG_TAG, "OpenClaw not configured, routing to agent-first setup");
-            mStatusText.setText(R.string.botdrop_setup_required);
-
-            Intent intent = new Intent(this, SetupActivity.class);
-            intent.putExtra(SetupActivity.EXTRA_START_STEP, SetupActivity.STEP_AGENT_SELECT);
-            startActivity(intent);
-            finish();
-            return;
-        }
-
-        // Check 4: Channel configured?
-        if (!hasChannelConfigured()) {
-            Logger.logInfo(LOG_TAG, "No channel configured, routing to channel setup");
-            mStatusText.setText(R.string.botdrop_channel_setup_required);
-
-            Intent intent = new Intent(this, SetupActivity.class);
-            intent.putExtra(SetupActivity.EXTRA_START_STEP, SetupActivity.STEP_CHANNEL);
-            startActivity(intent);
-            finish();
-            return;
-        }
+        // Check 3: AstrBot configured?
+        // AstrBot manages its own config via WebUI. If installed, we assume it's ready.
+        // Users configure AI and channels through AstrBot's WebUI (:6185).
 
         // All ready - go to DashboardActivity
         Logger.logInfo(LOG_TAG, "All ready, routing to dashboard");

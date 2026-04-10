@@ -183,25 +183,56 @@
         android:layout_marginTop="16dp"
         android:visibility="gone">
 
-        <TextView
-            android:id="@+id/install_error_message"
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:maxHeight="200dp"
+            android:background="#1A1A1A"
+            android:padding="8dp"
+            android:layout_marginBottom="12dp">
+
+            <TextView
+                android:id="@+id/install_error_message"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:textSize="12sp"
+                android:textColor="#BDBDBD"
+                android:fontFamily="monospace"
+                android:textIsSelectable="true"
+                android:lineSpacingExtra="2dp" />
+        </ScrollView>
+
+        <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textSize="13sp"
-            android:textColor="#D32F2F"
-            android:fontFamily="monospace"
-            android:layout_marginBottom="12dp" />
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
 
-        <Button
-            android:id="@+id/install_retry_button"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/botdrop_retry"
-            android:layout_gravity="start"
-            android:background="@drawable/botdrop_button_bg"
-            android:textColor="#1A1A1A"
-            android:textStyle="bold" />
+            <Button
+                android:id="@+id/install_copy_log_button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Copy Log"
+                android:textSize="12sp"
+                android:minHeight="36dp"
+                android:background="@drawable/botdrop_button_bg"
+                android:textColor="#1A1A1A"
+                android:layout_marginEnd="8dp" />
+
+            <Button
+                android:id="@+id/install_retry_button"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/botdrop_retry"
+                android:textSize="13sp"
+                android:minHeight="40dp"
+                android:background="@drawable/botdrop_button_bg"
+                android:textColor="#1A1A1A"
+                android:textStyle="bold" />
+        </LinearLayout>
 
     </LinearLayout>
+
 
 </LinearLayout>

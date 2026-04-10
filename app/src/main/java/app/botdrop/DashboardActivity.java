@@ -470,7 +470,7 @@ public class DashboardActivity extends Activity {
 
     private void openAgentSelection() {
         Intent intent = new Intent(this, SetupActivity.class);
-        intent.putExtra(SetupActivity.EXTRA_START_STEP, SetupActivity.STEP_AGENT_SELECT);
+        intent.putExtra(SetupActivity.EXTRA_START_STEP, SetupActivity.STEP_API_KEY);
         intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TASK);
         startActivity(intent);
         finish();

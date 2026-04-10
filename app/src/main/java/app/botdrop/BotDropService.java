@@ -46,6 +46,10 @@ public class BotDropService extends Service {
     private static final String BOTDROP_APT_LIST_FILE = BOTDROP_APT_SOURCES_LIST_D + "/botdrop.list";
     private static final long SHARP_INSTALL_RETRY_INTERVAL_MS = 10 * 60 * 1000L;
     private static final String BOTDROP_SHARED_ROOT = "/data/local/tmp/botdrop_tmp";
+    private static final String ASTRBOT_ROOT_DIR = TermuxConstants.TERMUX_HOME_DIR_PATH + "/astrbot";
+    private static final String ASTRBOT_PID_FILE = ASTRBOT_ROOT_DIR + "/astrbot.pid";
+    private static final String ASTRBOT_LOG_FILE = ASTRBOT_ROOT_DIR + "/astrbot.log";
+    private static final String ASTRBOT_DEBUG_LOG = ASTRBOT_ROOT_DIR + "/astrbot-debug.log";
     private static final String OPENCLAW_GLOBAL_PACKAGE_JSON =
         TermuxConstants.TERMUX_PREFIX_DIR_PATH + "/lib/node_modules/openclaw/package.json";
 
@@ -389,12 +393,8 @@ public class BotDropService extends Service {
             pb.environment().put("HOME", TermuxConstants.TERMUX_HOME_DIR_PATH);
             pb.environment().put("PATH", TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + ":" + System.getenv("PATH"));
             pb.environment().put("TMPDIR", TermuxConstants.TERMUX_TMP_PREFIX_DIR_PATH);
-            // Set SSL_CERT_FILE for Node.js fetch to find CA certificates
+            // Set SSL_CERT_FILE for HTTPS requests
             pb.environment().put("SSL_CERT_FILE", TermuxConstants.TERMUX_PREFIX_DIR_PATH + "/etc/tls/cert.pem");
-            // Ensure Node.js can resolve globally installed native addons (for sharp, etc.)
-            pb.environment().put("NODE_PATH", TermuxConstants.TERMUX_PREFIX_DIR_PATH + "/lib/node_modules");
-            pb.environment().put("NODE_OPTIONS",
-                resolveOpenclawNodeOptions(pb.environment().get("NODE_OPTIONS")));
 
             pb.redirectErrorStream(true);
 
@@ -500,34 +500,16 @@ public class BotDropService extends Service {
     }
 
     static String resolveInstallVersionPreference(Context context) {
-        String requested = context
-            .getSharedPreferences("botdrop_settings", Context.MODE_PRIVATE)
-            .getString("openclaw_install_version", "openclaw@latest");
-        String preferred = BundledOpenclawUtils.resolvePreferredInstallSpec(
-            requested,
-            BundledOpenclawUtils.loadManifest(context)
-        );
-        return preferred != null ? preferred : "openclaw@latest";
+        // AstrBot is installed via git clone, no version selection needed
+        return "latest";
     }
 
     private void stageBundledOpenclawAssetsIfPresent() {
-        BundledOpenclawUtils.Manifest manifest = BundledOpenclawUtils.loadManifest(this);
-        if (manifest == null) {
-            return;
-        }
-
-        File stagedRoot = new File(BundledOpenclawUtils.STAGED_ROOT);
-        deleteRecursively(stagedRoot);
-        try {
-            copyAssetDir(BundledOpenclawUtils.ASSET_ROOT, BundledOpenclawUtils.STAGED_ROOT);
-            Logger.logInfo(LOG_TAG, "Staged bundled OpenClaw assets for " + manifest.installSpec);
-        } catch (IOException e) {
-            Logger.logWarn(LOG_TAG, "Failed to stage bundled OpenClaw assets: " + e.getMessage());
-        }
+        // No-op: AstrBot assets are not bundled in the APK
     }
 
     /**
-     * Install OpenClaw by calling the standalone install.sh script.
+     * Install AstrBot by calling the standalone install.sh script.
      * Parses structured output lines for progress reporting:
      *   BOTDROP_STEP:N:START:message  → callback.onStepStart(N, message)
      *   BOTDROP_STEP:N:DONE           → callback.onStepComplete(N)
@@ -535,7 +517,7 @@ public class BotDropService extends Service {
      *   BOTDROP_ERROR:message         → callback.onError(message)
      *   BOTDROP_ALREADY_INSTALLED     → callback.onComplete()
      */
-    public void installOpenclaw(InstallProgressCallback callback) {
+    public void installAstrBot(InstallProgressCallback callback) {
         final String INSTALL_SCRIPT = TermuxConstants.TERMUX_PREFIX_DIR_PATH + "/share/botdrop/install.sh";
 
         if (!safeExecute(mExecutor, () -> {
@@ -563,9 +545,6 @@ public class BotDropService extends Service {
                 pb.environment().put("PATH", TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + ":" + System.getenv("PATH"));
                 pb.environment().put("TMPDIR", TermuxConstants.TERMUX_TMP_PREFIX_DIR_PATH);
                 pb.environment().put("SSL_CERT_FILE", TermuxConstants.TERMUX_PREFIX_DIR_PATH + "/etc/tls/cert.pem");
-                pb.environment().put("NODE_PATH", TermuxConstants.TERMUX_PREFIX_DIR_PATH + "/lib/node_modules");
-                pb.environment().put("NODE_OPTIONS",
-                    resolveOpenclawNodeOptions(pb.environment().get("NODE_OPTIONS")));
                 pb.redirectErrorStream(true);
 
                 Logger.logInfo(LOG_TAG, "Starting install via " + INSTALL_SCRIPT);
@@ -578,29 +557,19 @@ public class BotDropService extends Service {
                 try (BufferedReader reader = new BufferedReader(
                     new InputStreamReader(process.getInputStream())
                 )) {
-                    final int[] installPercent = {-1};
                     String line;
                     while ((line = reader.readLine()) != null) {
                         Logger.logVerbose(LOG_TAG, "install.sh: " + line);
-                        int nextPercent = NpmInstallProgressParser.resolvePercent(line, installPercent[0]);
-                        if (nextPercent > installPercent[0]) {
-                            installPercent[0] = nextPercent;
-                            int finalPercent = nextPercent;
-                            mHandler.post(() -> callback.onStepStart(
-                                2,
-                                "Installing OpenClaw " + finalPercent + "%"
-                            ));
-                        }
                         parseInstallOutput(line, callback);
                         recentLines.add(line);
                         if (recentLines.size() > MAX_RECENT) recentLines.remove(0);
                     }
                 }
 
-                boolean finished = waitForCompat(process, 300, TimeUnit.SECONDS);
+                boolean finished = waitForCompat(process, 600, TimeUnit.SECONDS);
                 if (!finished) {
                     process.destroyForcibly();
-                    mHandler.post(() -> callback.onError("Installation timed out after 5 minutes"));
+                    mHandler.post(() -> callback.onError("Installation timed out after 10 minutes"));
                     return;
                 }
 
@@ -667,61 +636,47 @@ public class BotDropService extends Service {
     }
 
     /**
-     * Check if OpenClaw is installed (check binary, not just module directory)
+     * Check if AstrBot is installed (check astrbot directory and proot-distro ubuntu)
      */
+    public static boolean isAstrBotInstalled() {
+        java.io.File astrbotRoot = new java.io.File(ASTRBOT_ROOT_DIR);
+        java.io.File ubuntuRootfs = new java.io.File(
+            TermuxConstants.TERMUX_PREFIX_DIR_PATH + "/var/lib/proot-distro/installed-rootfs/ubuntu");
+        return astrbotRoot.exists() && ubuntuRootfs.exists();
+    }
+
+    /** @deprecated Use {@link #isAstrBotInstalled()} */
+    @Deprecated
     public static boolean isOpenclawInstalled() {
-        // Check if the openclaw binary exists and is executable
-        java.io.File binary = new java.io.File(TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + "/openclaw");
-        return binary.exists() && binary.canExecute();
+        return isAstrBotInstalled();
     }
 
     /**
      * Get OpenClaw version (synchronously)
      */
-    public static String getOpenclawVersion() {
-        return findOpenclawVersion(new java.io.File(OPENCLAW_GLOBAL_PACKAGE_JSON));
-    }
-
-    static String findOpenclawVersion(java.io.File... packageJsonCandidates) {
-        try {
-            if (packageJsonCandidates == null) {
-                return null;
-            }
-
-            for (java.io.File packageJson : packageJsonCandidates) {
-                if (packageJson == null || !packageJson.exists()) {
-                    continue;
-                }
-
-                // Use try-with-resources to avoid resource leak
-                try (java.io.BufferedReader reader = new java.io.BufferedReader(
-                    new java.io.FileReader(packageJson)
-                )) {
-                    StringBuilder content = new StringBuilder();
-                    String line;
-                    while ((line = reader.readLine()) != null) {
-                        content.append(line);
-                    }
-
-                    // Use JSONObject for reliable parsing
-                    org.json.JSONObject json = new org.json.JSONObject(content.toString());
-                    String version = json.optString("version", null);
-                    if (version != null && !version.isEmpty()) {
-                        return version;
-                    }
-                }
-            }
-        } catch (Exception e) {
-            Logger.logError(LOG_TAG, "Failed to get OpenClaw version: " + e.getMessage());
+    public static String getAstrBotVersion() {
+        // Return a display string for AstrBot version
+        // AstrBot doesn't have a traditional version number; return "installed" if installed
+        if (isAstrBotInstalled()) {
+            return "installed";
         }
         return null;
     }
 
+    /** @deprecated Use {@link #getAstrBotVersion()} */
+    @Deprecated
+    public static String getOpenclawVersion() {
+        return getAstrBotVersion();
+    }
+
     /**
      * Check if OpenClaw config exists
+     * @deprecated AstrBot manages its own config via WebUI
      */
+    @Deprecated
     public static boolean isOpenclawConfigured() {
-        return new java.io.File(TermuxConstants.TERMUX_HOME_DIR_PATH + "/.openclaw/openclaw.json").exists();
+        // AstrBot manages its own config; if installed, assume configured via WebUI
+        return isAstrBotInstalled();
     }
 
     /**
@@ -736,33 +691,11 @@ public class BotDropService extends Service {
                "export PATH=$PREFIX/bin:$PATH\n" +
                "export TMPDIR=$PREFIX/tmp\n" +
                "export SSL_CERT_FILE=$PREFIX/etc/tls/cert.pem\n" +
-               "export NODE_PATH=$PREFIX/lib/node_modules\n" +
-               buildNodeOptionsExport() +
                command;
     }
 
-    /**
-     * Build an openclaw command wrapped in termux-chroot.
-     * Required: Android kernel blocks os.networkInterfaces() which OpenClaw needs.
-     * termux-chroot (proot) provides a virtual chroot that bypasses this limitation.
-     */
-    private String withTermuxChroot(String openclawArgs) {
-        return "export HOME=" + TermuxConstants.TERMUX_HOME_DIR_PATH + "\n" +
-               "export BOTDROP_TERMUX_HOME=" + TermuxConstants.TERMUX_HOME_DIR_PATH + "\n" +
-               "export BOTDROP_SHARED_ROOT=" + BOTDROP_SHARED_ROOT + "\n" +
-               "export PREFIX=" + TermuxConstants.TERMUX_PREFIX_DIR_PATH + "\n" +
-               "export PATH=$PREFIX/bin:$PATH\n" +
-               "export TMPDIR=$PREFIX/tmp\n" +
-               "export SSL_CERT_FILE=$PREFIX/etc/tls/cert.pem\n" +
-               "export NODE_PATH=$PREFIX/lib/node_modules\n" +
-               buildNodeOptionsExport() +
-               // `openclaw` is installed as a wrapper that already runs under `termux-chroot`.
-               // Avoid nesting proot/termux-chroot, which can stall gateway startup for minutes.
-               "openclaw " + openclawArgs;
-    }
-
-    private static final String GATEWAY_PID_FILE = TermuxConstants.TERMUX_HOME_DIR_PATH + "/.openclaw/gateway.pid";
-    private static final String GATEWAY_LOG_FILE = TermuxConstants.TERMUX_HOME_DIR_PATH + "/.openclaw/gateway.log";
+    private static final String GATEWAY_PID_FILE = ASTRBOT_PID_FILE;
+    private static final String GATEWAY_LOG_FILE = ASTRBOT_LOG_FILE;
 
     public void startGateway(CommandCallback callback) {
         // Ensure legacy config keys are repaired right before starting the gateway.
@@ -933,19 +866,18 @@ public class BotDropService extends Service {
     }
 
     public void stopGateway(CommandCallback callback) {
-        // PID files can be stale and the gateway may spawn children. Use best-effort cleanup to
-        // prevent port 18789 conflicts and restart storms.
+        // Stop the AstrBot process running inside proot-distro Ubuntu
         String cmd =
             "PID=''\n" +
             "if [ -f " + GATEWAY_PID_FILE + " ]; then PID=$(cat " + GATEWAY_PID_FILE + " 2>/dev/null || true); fi\n" +
             "rm -f " + GATEWAY_PID_FILE + "\n" +
             "if [ -n \"$PID\" ]; then\n" +
             "  kill \"$PID\" 2>/dev/null || true\n" +
-            "  pkill -TERM -P \"$PID\" 2>/dev/null || true\n" +
             "fi\n" +
-            "pkill -TERM -f \"openclaw.*gateway\" 2>/dev/null || true\n" +
+            "# Also kill any uv process running main.py inside Ubuntu\n" +
+            "proot-distro login ubuntu --shared-tmp -- pkill -TERM -f \"uv run main.py\" 2>/dev/null || true\n" +
             "sleep 1\n" +
-            "pkill -9 -f \"openclaw.*gateway\" 2>/dev/null || true\n" +
+            "proot-distro login ubuntu --shared-tmp -- pkill -9 -f \"uv run main.py\" 2>/dev/null || true\n" +
             "echo stopped\n";
         executeCommand(cmd, callback);
     }
@@ -971,7 +903,8 @@ public class BotDropService extends Service {
             "  echo running\n" +
             "  exit 0\n" +
             "fi\n" +
-            "if pgrep -f \"openclaw.*gateway\" >/dev/null 2>&1; then\n" +
+            "# Also check for AstrBot process inside Ubuntu\n" +
+            "if proot-distro login ubuntu --shared-tmp -- pgrep -f \"uv run main.py\" >/dev/null 2>&1; then\n" +
             "  echo running\n" +
             "else\n" +
             "  echo stopped\n" +
@@ -1104,7 +1037,7 @@ public class BotDropService extends Service {
                 BotDropConfig.sanitizeLegacyConfig();
                 CommandResult startResult = executeGatewayStart();
 
-                String newVersion = getOpenclawVersion();
+                String newVersion = getAstrBotVersion();
                 String versionStr = newVersion != null ? newVersion : "unknown";
 
                 if (startResult.success) {
@@ -1130,7 +1063,6 @@ public class BotDropService extends Service {
     }
 
     private CommandResult executeGatewayStart() {
-        scheduleSilentSharpInstallationCheck();
         return executeCommandSync(buildStartGatewayScript());
     }
 
@@ -1168,11 +1100,10 @@ public class BotDropService extends Service {
             "rm -f " + GATEWAY_PID_FILE + "\n" +
             "if [ -n \"$PID\" ]; then\n" +
             "  kill \"$PID\" 2>/dev/null || true\n" +
-            "  pkill -TERM -P \"$PID\" 2>/dev/null || true\n" +
             "fi\n" +
-            "pkill -TERM -f \"openclaw.*gateway\" 2>/dev/null || true\n" +
+            "proot-distro login ubuntu --shared-tmp -- pkill -TERM -f \"uv run main.py\" 2>/dev/null || true\n" +
             "sleep 1\n" +
-            "pkill -9 -f \"openclaw.*gateway\" 2>/dev/null || true\n" +
+            "proot-distro login ubuntu --shared-tmp -- pkill -9 -f \"uv run main.py\" 2>/dev/null || true\n" +
             "echo stopped\n";
     }
 
@@ -1378,23 +1309,21 @@ public class BotDropService extends Service {
      * instead of executing it, so it can be used from within updateOpenclaw on mExecutor).
      */
     private String buildStartGatewayScript() {
-        String logDir = TermuxConstants.TERMUX_HOME_DIR_PATH + "/.openclaw";
-        String debugLog = logDir + "/gateway-debug.log";
         String home = TermuxConstants.TERMUX_HOME_DIR_PATH;
         String prefix = TermuxConstants.TERMUX_PREFIX_DIR_PATH;
-        return "mkdir -p " + logDir + "\n" +
-            "exec 2>" + debugLog + "\n" +
+        return "mkdir -p " + ASTRBOT_ROOT_DIR + "\n" +
+            "exec 2>" + ASTRBOT_DEBUG_LOG + "\n" +
             "set -x\n" +
             "echo \"date: $(date)\" >&2\n" +
             "echo \"id: $(id)\" >&2\n" +
-            "echo \"PATH=$PATH\" >&2\n" +
             "pgrep -x sshd || sshd || true\n" +
-            "pkill -f \"openclaw.*gateway\" 2>/dev/null || true\n" +
+            "# Stop any existing AstrBot process\n" +
             "if [ -f " + GATEWAY_PID_FILE + " ]; then\n" +
             "  kill $(cat " + GATEWAY_PID_FILE + ") 2>/dev/null\n" +
             "  rm -f " + GATEWAY_PID_FILE + "\n" +
             "  sleep 1\n" +
             "fi\n" +
+            "proot-distro login ubuntu --shared-tmp -- pkill -TERM -f \"uv run main.py\" 2>/dev/null || true\n" +
             "sleep 1\n" +
             "echo '' > " + GATEWAY_LOG_FILE + "\n" +
             "export BOTDROP_TERMUX_HOME=" + home + "\n" +
@@ -1403,29 +1332,21 @@ public class BotDropService extends Service {
             "export PREFIX=" + prefix + "\n" +
             "export PATH=$PREFIX/bin:$PATH\n" +
             "export TMPDIR=$PREFIX/tmp\n" +
-            "export SSL_CERT_FILE=$PREFIX/etc/tls/cert.pem\n" +
-            "export NODE_PATH=$PREFIX/lib/node_modules\n" +
-            buildNodeOptionsExport() +
-            "echo \"=== Environment before chroot ===\" >&2\n" +
-            "echo \"SSL_CERT_FILE=$SSL_CERT_FILE\" >&2\n" +
-            "echo \"NODE_PATH=$NODE_PATH\" >&2\n" +
-            "echo \"NODE_OPTIONS=$NODE_OPTIONS\" >&2\n" +
-            "echo \"Testing cert file access:\" >&2\n" +
-            "ls -lh $PREFIX/etc/tls/cert.pem >&2 || echo \"cert.pem not found!\" >&2\n" +
-            "openclaw gateway run --force >> " + GATEWAY_LOG_FILE + " 2>&1 &\n" +
+            "echo \"=== Starting AstrBot ===\" >&2\n" +
+            "# Start AstrBot inside Ubuntu via proot-distro, running in background\n" +
+            "proot-distro login ubuntu --shared-tmp -- bash -c \"cd /root/astrbot && uv run main.py\" >> " + GATEWAY_LOG_FILE + " 2>&1 &\n" +
             "GW_PID=$!\n" +
             "echo $GW_PID > " + GATEWAY_PID_FILE + "\n" +
-            "echo \"gateway pid: $GW_PID\" >&2\n" +
-            "sleep 3\n" +
+            "echo \"AstrBot pid: $GW_PID\" >&2\n" +
+            "sleep 5\n" +
+            "# Verify the process is still alive\n" +
             "if kill -0 $GW_PID 2>/dev/null; then\n" +
             "  echo started\n" +
             "else\n" +
-            "  echo \"gateway died, log:\" >&2\n" +
+            "  echo \"AstrBot died, log:\" >&2\n" +
             "  cat " + GATEWAY_LOG_FILE + " >&2\n" +
-            "  rm -f " + GATEWAY_PID_FILE + "\n" +
-            "  cat " + GATEWAY_LOG_FILE + "\n" +
             "  echo '---'\n" +
-            "  cat " + debugLog + "\n" +
+            "  cat " + ASTRBOT_DEBUG_LOG + "\n" +
             "  exit 1\n" +
             "fi\n";
     }
@@ -1467,7 +1388,7 @@ public class BotDropService extends Service {
     }
 
     private String resolveOpenclawNodeOptions(String existingOptions) {
-        return OpenclawVersionUtils.buildOpenclawNodeOptions(existingOptions, getDeviceTotalRamMb());
+        return existingOptions != null ? existingOptions : "";
     }
 
     /**
@@ -1475,8 +1396,7 @@ public class BotDropService extends Service {
      * Avoids relying on /proc/meminfo which may be unreliable inside proot/chroot.
      */
     private String buildNodeOptionsExport() {
-        int oldSpaceMb = OpenclawVersionUtils.recommendOpenclawOldSpaceMb(getDeviceTotalRamMb());
-        return OpenclawVersionUtils.buildNodeOptionsExportCommand(oldSpaceMb);
+        return "";
     }
 
     private long getDeviceTotalRamMb() {

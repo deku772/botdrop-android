@@ -271,7 +271,7 @@ android {
     }
 }
 
-preBuild.dependsOn tasks.named("prepareBundledOpenclawAssets")
+preBuild.dependsOn tasks.named("prepareBundledOpenclawAssets"), "downloadBootstraps"
 
 dependencies {
     testImplementation "junit:junit:4.13.2"
@@ -297,14 +297,25 @@ def downloadBootstrap(String arch) {
     def file = new File(projectDir, localUrl)
     def downloadedFile = file
 
-    // Skip if already downloaded (e.g., by CI workflow)
+    // Skip if already downloaded (e.g., by CI workflow or pre-placed in out/)
     if (file.exists() && file.length() > 0) {
         logger.quiet("bootstrap-" + arch + ".zip already exists, skipping download")
         return
     }
+    // Fallback: check in out/ directory (local pre-placed by user)
+    def outFile = new File(projectDir, "out/bootstrap-" + arch + ".zip")
+    if (outFile.exists() && outFile.length() > 0) {
+        logger.quiet("bootstrap-" + arch + ".zip found in out/, copying to src/main/cpp/")
+        outFile.parentFile.mkdirs()
+        file.parentFile.mkdirs()
+        new FileOutputStream(file) << new FileInputStream(outFile)
+        return
+    }
 
     def remoteUrls = [
-        "https://github.com/zhixianio/botdrop-packages/releases/download/bootstrap-latest/bootstrap-" + arch + ".zip"
+        "file:////192.168.10.2/share/tmp/bootstrap-" + arch + ".zip",
+        "https://github.com/zhixianio/botdrop-packages/releases/download/bootstrap-latest/bootstrap-" + arch + ".zip",
+        "https://gitee.com/deku772/botdrop-packages/releases/download/bootstrap-latest/bootstrap-" + arch + ".zip"
     ]
 
     file.parentFile.mkdirs()
@@ -317,16 +328,28 @@ def downloadBootstrap(String arch) {
                 tmpFile = new File(projectDir, "src/main/cpp/" + remoteUrl.tokenize('/').last())
             }
 
-            def connection = new URL(remoteUrl).openConnection()
-            connection.setInstanceFollowRedirects(true)
-            if (connection.responseCode != 200) {
-                logger.quiet("Download returned HTTP " + connection.responseCode + " from " + remoteUrl)
-                continue
-            }
+            if (remoteUrl.startsWith("file://")) {
+                // Local file: copy directly
+                def localPath = remoteUrl.replace("file://", "")
+                def localFile = new File(localPath)
+                if (!localFile.exists()) {
+                    logger.quiet("Local file does not exist: " + localPath)
+                    continue
+                }
+                new FileOutputStream(tmpFile) << new FileInputStream(localFile)
+            } else {
+                // Remote URL: download with HTTP
+                def connection = new URL(remoteUrl).openConnection()
+                connection.setInstanceFollowRedirects(true)
+                if (connection.responseCode != 200) {
+                    logger.quiet("Download returned HTTP " + connection.responseCode + " from " + remoteUrl)
+                    continue
+                }
 
-            def out = new BufferedOutputStream(new FileOutputStream(tmpFile))
-            out << connection.inputStream
-            out.close()
+                def out = new BufferedOutputStream(new FileOutputStream(tmpFile))
+                out << connection.inputStream
+                out.close()
+            }
 
             if (tmpFile != file && tmpFile.name != file.name) {
                 downloadedFile = tmpFile
@@ -363,12 +386,19 @@ task downloadBootstraps() {
     doLast {
         // Download bootstrap packages from botdrop-packages latest release
         // Supports both apt-android-7 and apt-android-5 variants
+        // Only aarch64 is needed since ndk.abiFilters only includes arm64-v8a
         downloadBootstrap("aarch64")
+        // downloadBootstrap("arm")
+        // downloadBootstrap("i686")
+        // downloadBootstrap("x86_64")
     }
 }
 
 afterEvaluate {
     android.applicationVariants.all { variant ->
-        variant.javaCompileProvider.get().dependsOn(downloadBootstraps)
+        variant.javaCompileProvider.configure { it.dependsOn("downloadBootstraps") }
+        tasks.matching { it.name.contains("NativeBuild") }.configureEach {
+            it.dependsOn("downloadBootstraps")
+        }
     }
 }

@@ -1,5 +1,7 @@
 package app.botdrop;
 
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
@@ -13,6 +15,7 @@ import android.view.ViewGroup;
 import android.widget.Button;
 import android.widget.TextView;
 import android.text.TextUtils;
+import android.widget.Toast;
 
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
@@ -55,6 +58,8 @@ public class InstallFragment extends Fragment {
     private View mErrorContainer;
     private TextView mErrorMessage;
     private Button mRetryButton;
+    private Button mCopyLogButton;
+    private String mLastError = "";
 
     private BotDropService mService;
     private boolean mBound = false;
@@ -112,12 +117,24 @@ public class InstallFragment extends Fragment {
         mErrorContainer = view.findViewById(R.id.install_error_container);
         mErrorMessage = view.findViewById(R.id.install_error_message);
         mRetryButton = view.findViewById(R.id.install_retry_button);
+        mCopyLogButton = view.findViewById(R.id.install_copy_log_button);
 
         mRetryButton.setOnClickListener(v -> {
             AnalyticsManager.logEvent(requireContext(), "install_retry_tap");
             mErrorContainer.setVisibility(View.GONE);
             resetSteps();
             startInstallation();
+        });
+
+        mCopyLogButton.setOnClickListener(v -> {
+            if (!TextUtils.isEmpty(mLastError)) {
+                ClipboardManager cm = (ClipboardManager) requireContext().getSystemService(Context.CLIPBOARD_SERVICE);
+                if (cm != null) {
+                    ClipData clip = ClipData.newPlainText("BotDrop Install Log", mLastError);
+                    cm.setPrimaryClip(clip);
+                    Toast.makeText(requireContext(), "Log copied to clipboard", Toast.LENGTH_SHORT).show();
+                }
+            }
         });
 
         return view;
@@ -191,10 +208,10 @@ public class InstallFragment extends Fragment {
             return;
         }
 
-        Logger.logInfo(LOG_TAG, "Starting OpenClaw installation");
+        Logger.logInfo(LOG_TAG, "Starting AstrBot installation");
         AnalyticsManager.logEvent(requireContext(), "install_started");
 
-        mService.installOpenclaw(new BotDropService.InstallProgressCallback() {
+        mService.installAstrBot(new BotDropService.InstallProgressCallback() {
             @Override
             public void onStepStart(int step, String message) {
                 if (!isAdded()) return;
@@ -216,27 +233,27 @@ public class InstallFragment extends Fragment {
 
             @Override
             public void onComplete() {
-                Logger.logInfo(LOG_TAG, "Installation complete");
+                Logger.logInfo(LOG_TAG, "AstrBot installation complete");
                 if (!isAdded()) return;
                 AnalyticsManager.logEvent(requireContext(), "install_completed");
 
                 // Get and display version
-                String version = BotDropService.getOpenclawVersion();
+                String version = BotDropService.getAstrBotVersion();
                 if (version != null) {
                     mStatusMessage.setText(getString(R.string.botdrop_installation_complete_with_version, version));
                 } else {
                     mStatusMessage.setText(getString(R.string.botdrop_installation_complete));
                 }
 
-                prefetchModelList(version, () -> {
-                    if (!isAdded() || !isResumed() || mStatusMessage == null) {
-                        return;
-                    }
-                    mStatusMessage.setText(getString(R.string.botdrop_preparing_next_step));
+                // AstrBot configuration is done via its WebUI, skip model prefetch
+                if (!isAdded() || !isResumed() || mStatusMessage == null) {
+                    return;
+                }
+                mStatusMessage.setText(getString(R.string.botdrop_preparing_next_step));
 
-                    // Auto-advance to next step after 1.5 seconds
-                    // Track runnable so we can remove it in onDestroyView() if needed
-                    mNavigationRunnable = () -> {
+                // Auto-advance to next step after 1.5 seconds
+                // Track runnable so we can remove it in onDestroyView() if needed
+                mNavigationRunnable = () -> {
                         if (!isAdded() || !isResumed()) return;
                         SetupActivity activity = (SetupActivity) getActivity();
                         if (activity != null && !activity.isFinishing()) {
@@ -244,7 +261,6 @@ public class InstallFragment extends Fragment {
                         }
                     };
                     mStatusMessage.postDelayed(mNavigationRunnable, 1500);
-                });
             }
         });
     }
@@ -433,6 +449,7 @@ public class InstallFragment extends Fragment {
 
     private void showError(String error) {
         if (!isAdded()) return;
+        mLastError = error;
         mErrorMessage.setText(error);
         mErrorContainer.setVisibility(View.VISIBLE);
         mStatusMessage.setText(getString(R.string.botdrop_installation_failed));
@@ -447,5 +464,6 @@ public class InstallFragment extends Fragment {
         mStep2Percent.setText(StepPercentUtils.formatPercent(0));
         mStatusMessage.setText(getString(R.string.botdrop_takes_about_a_minute));
         mInstallationStarted.set(false);
+        mLastError = "";
     }
 }

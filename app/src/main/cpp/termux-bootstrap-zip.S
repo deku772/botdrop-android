@@ -13,6 +13,6 @@
  #else
  # error Unsupported arch
  #endif
- 1:
+ blob_end:
  blob_size:
-     .int 1b - blob
+     .int blob_end - blob

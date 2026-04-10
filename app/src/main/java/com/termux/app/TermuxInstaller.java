@@ -24,8 +24,7 @@ import com.termux.shared.android.PackageUtils;
 import com.termux.shared.termux.TermuxConstants;
 import com.termux.shared.termux.TermuxUtils;
 import com.termux.shared.termux.shell.command.environment.TermuxShellEnvironment;
-import app.botdrop.BundledOpenclawUtils;
-import app.botdrop.OpenclawVersionUtils;
+
 
 import java.io.BufferedReader;
 import java.io.ByteArrayInputStream;
@@ -219,6 +218,21 @@ public final class TermuxInstaller {
                                         //noinspection OctalInteger
                                         Os.chmod(targetFile.getAbsolutePath(), 0700);
                                     }
+                                    // Fix shebang paths in bash scripts that were built for com.termux but
+                                    // are now running under app.botdrop. Rewrite #!/data/data/com.termux/...
+                                    // to point to the app.botdrop bash.
+                                    if (zipEntryName.equals("bin/proot-distro")) {
+                                        StringBuilder sb = new StringBuilder();
+                                        Error err = FileUtils.readTextFromFile(LOG_TAG, targetFile.getAbsolutePath(), null, sb, false);
+                                        if (err == null && sb.length() > 0 && sb.toString().startsWith("#!/data/data/com.termux/")) {
+                                            String fixedContent = sb.toString().replaceFirst(
+                                                "#!/data/data/com\\.termux/files/usr/bin/bash",
+                                                "#!/data/data/" + TermuxConstants.TERMUX_PACKAGE_NAME + "/files/usr/bin/bash"
+                                            );
+                                            FileUtils.writeTextToFile(LOG_TAG, targetFile.getAbsolutePath(), null, fixedContent, false);
+                                            Logger.logInfo(LOG_TAG, "Fixed shebang in bin/proot-distro");
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -229,6 +243,16 @@ public final class TermuxInstaller {
                     for (Pair<String, String> symlink : symlinks) {
                         Os.symlink(symlink.first, symlink.second);
                     }
+
+                    // Save a copy of the bootstrap zip so install.sh can re-extract
+                    // specific files (like proot) later for path remapping fixes.
+                    File bootstrapZipFile = new File(TERMUX_STAGING_PREFIX_DIR, "var/lib/bootstrap-aarch64.zip");
+                    File bootstrapZipParent = new File(TERMUX_STAGING_PREFIX_DIR, "var/lib");
+                    if (!bootstrapZipParent.exists()) bootstrapZipParent.mkdirs();
+                    try (FileOutputStream fos = new FileOutputStream(bootstrapZipFile)) {
+                        fos.write(zipBytes);
+                    }
+                    Logger.logInfo(LOG_TAG, "Saved bootstrap zip to " + bootstrapZipFile.getAbsolutePath() + " (" + (zipBytes.length / 1024 / 1024) + " MB).");
 
                     Logger.logInfo(LOG_TAG, "Moving termux prefix staging to prefix directory.");
 
@@ -421,12 +445,9 @@ public final class TermuxInstaller {
      *   BOTDROP_COMPLETE
      *   BOTDROP_ERROR:message
      */
-    public static void createBotDropScripts(Context context, String openclawVersion) {
+    public static void createBotDropScripts(Context context, String ignoredOpenclawVersion) {
         try {
-            int oldSpaceMb = OpenclawVersionUtils.recommendOpenclawOldSpaceMb(getDeviceTotalRamMb(context));
-
             // --- 1. Create install.sh ---
-
             File botdropDir = new File(TERMUX_PREFIX_DIR_PATH + "/share/botdrop");
             if (!botdropDir.exists()) {
                 botdropDir.mkdirs();
@@ -435,23 +456,23 @@ public final class TermuxInstaller {
             File installScript = new File(botdropDir, "install.sh");
             String installContent =
                 "#!" + com.termux.shared.termux.TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + "/bash\n" +
-                "# BotDrop install script — single source of truth\n" +
+                "# BotDrop AstrBot install script — single source of truth\n" +
                 "# Called by: GUI (ProcessBuilder) and terminal (profile.d)\n" +
                 "# Outputs structured lines for GUI progress parsing.\n\n" +
                 "LOGFILE=\"$HOME/botdrop-install.log\"\n" +
                 "exec > >(tee -a \"$LOGFILE\") 2>&1\n" +
-                "echo \"=== BotDrop install started: $(date) ===\"\n\n" +
-                "MARKER=\"$HOME/.botdrop_installed\"\n\n" +
+                "echo \"=== BotDrop AstrBot install started: $(date) ===\"\n\n" +
+                "MARKER=\"$HOME/.botdrop_installed\"\n" +
+                "ASTRBOT_ROOT=\"$HOME/astrbot\"\n\n" +
                 "if [ -f \"$MARKER\" ]; then\n" +
                 "    echo \"BOTDROP_ALREADY_INSTALLED\"\n" +
                 "    exit 0\n" +
                 "fi\n\n" +
-                "echo \"BOTDROP_STEP:0:START:Setting up environment\"\n" +
+                "# Step 0: Setup Termux environment\n" +
+                "echo \"BOTDROP_STEP:0:START:Setting up Termux environment\"\n" +
                 buildBotDropAptSourceScript() +
                 "chmod +x $PREFIX/bin/* 2>/dev/null\n" +
-                "chmod +x $PREFIX/lib/node_modules/.bin/* 2>/dev/null\n" +
-                "chmod +x $PREFIX/lib/node_modules/npm/bin/* 2>/dev/null\n" +
-                "# Generate SSH host keys if missing (openssh.postinst equivalent)\n" +
+                "# Generate SSH host keys if missing\n" +
                 "mkdir -p $PREFIX/var/empty\n" +
                 "mkdir -p $HOME/.ssh\n" +
                 "touch $HOME/.ssh/authorized_keys\n" +
@@ -466,26 +487,264 @@ public final class TermuxInstaller {
                 "printf '%s\\n%s\\n' \"$SSH_PASS\" \"$SSH_PASS\" | passwd >/dev/null 2>&1\n" +
                 "echo \"$SSH_PASS\" > \"$HOME/.ssh_password\"\n" +
                 "chmod 600 \"$HOME/.ssh_password\"\n" +
-                "# Create required OpenClaw directories\n" +
-                "mkdir -p $HOME/.openclaw/agents/main/agent\n" +
-                "mkdir -p $HOME/.openclaw/agents/main/sessions\n" +
-                "mkdir -p $HOME/.openclaw/credentials\n" +
                 "# BotDrop APT sources were already written above.\n" +
                 "# Start sshd (port 8022)\n" +
                 "if ! pgrep -x sshd >/dev/null 2>&1; then\n" +
                 "    sshd 2>/dev/null\n" +
                 "fi\n" +
                 "echo \"BOTDROP_STEP:0:DONE\"\n\n" +
-                "echo \"BOTDROP_STEP:1:START:Verifying Node.js\"\n" +
-                "NODE_V=$(node --version 2>&1)\n" +
-                "NPM_V=$(npm --version 2>&1)\n" +
-                "if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then\n" +
-                "    echo \"BOTDROP_ERROR:Node.js or npm not found. Bootstrap may be corrupted.\"\n" +
+                "# Step 1: Install Termux packages needed for AstrBot\n" +
+                "echo \"BOTDROP_STEP:1:START:Installing proot-distro, git, curl\"\n" +
+                "# Clean up leftover rootfs from previous failed installs to free space\n" +
+                "rm -rf \"$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu\" 2>/dev/null\n" +
+                "rm -rf \"$PREFIX/var/lib/proot-distro/cache\" 2>/dev/null\n" +
+                "# Pre-emptively remove packages with problematic dependencies\n" +
+                "# dpkg-perl from Termux repo depends on clang which may conflict with BotDrop packages\n" +
+                "dpkg -r --force-remove-reinstreq dpkg-scanpackages 2>/dev/null || true\n" +
+                "dpkg -r --force-remove-reinstreq dpkg-perl 2>/dev/null || true\n" +
+                "apt update 2>&1 | tee -a \"$LOGFILE\" || true\n" +
+                "apt --fix-broken install -y 2>&1 | tee -a \"$LOGFILE\" || true\n" +
+                "# Install git & curl from BotDrop source only (path-compatible with app.botdrop)\n" +
+                "DEBIAN_FRONTEND=noninteractive apt install -y -o Dir::Etc::sourcelist=\"$PREFIX/etc/apt/sources.list.d/botdrop.list\" -o Dir::Etc::sourceparts=\"-\" git curl 2>&1 | tee -a \"$LOGFILE\" || true\n" +
+                "# Create a minimal 'file' replacement since proot-distro needs it to detect\n" +
+                "# rootfs archive types. proot-distro only uses 'file -b --mime-type' syntax.\n" +
+                "cat > \"$PREFIX/bin/file\" << 'FILEEOF'\n" +
+                "#!/data/data/app.botdrop/files/usr/bin/bash\n" +
+                "# Minimal 'file' replacement for proot-distro\n" +
+                "if [ \"$1\" = \"-b\" ] && [ \"$2\" = \"--mime-type\" ]; then\n" +
+                "    f=\"$3\"\n" +
+                "    case \"$(head -c 6 \"$f\" 2>/dev/null | cat -v)\" in\n" +
+                "        */xz\\ *)    echo 'application/x-xz' ;;\n" +
+                "        PK\\ \\03\\ *) echo 'application/zip' ;;\n" +
+                "        H4sI\\ *)    echo 'application/gzip' ;;\n" +
+                "        \\x1f\\x8b\\ *) echo 'application/gzip' ;;\n" +
+                "        *)           echo 'application/octet-stream' ;;\n" +
+                "    esac\n" +
+                "elif [ \"$1\" = \"-b\" ] && [ \"$2\" = \"-i\" ]; then\n" +
+                "    f=\"$3\"\n" +
+                "    case \"$(head -c 6 \"$f\" 2>/dev/null | cat -v)\" in\n" +
+                "        */xz\\ *)    echo 'application/x-xz' ;;\n" +
+                "        PK\\ \\03\\ *) echo 'application/zip' ;;\n" +
+                "        H4sI\\ *)    echo 'application/gzip' ;;\n" +
+                "        \\x1f\\x8b\\ *) echo 'application/gzip' ;;\n" +
+                "        *)           echo 'application/octet-stream' ;;\n" +
+                "    esac\n" +
+                "else\n" +
+                "    echo \"$1: directory\" 2>/dev/null || echo \"$1: regular file\"\n" +
+                "fi\n" +
+                "FILEEOF\n" +
+                "chmod +x \"$PREFIX/bin/file\"\n" +
+                "echo 'Created minimal file replacement'\n" +
+                "# Install proot-distro: official deb uses /data/data/com.termux paths\n" +
+                "# which conflict with app.botdrop, so we extract and remap manually\n" +
+                "if ! command -v proot-distro >/dev/null 2>&1; then\n" +
+                "    echo 'Installing proot-distro (manual deb remap)...'\n" +
+                "    PROOT_DEB=\"$TMPDIR/proot-distro.deb\"\n" +
+                "    curl -sL 'https://packages.termux.dev/apt/termux-main/pool/main/p/proot-distro/proot-distro_4.38.0_all.deb' -o \"$PROOT_DEB\"\n" +
+                "    if [ -f \"$PROOT_DEB\" ] && [ $(wc -c < \"$PROOT_DEB\") -gt 1000 ]; then\n" +
+                "        EXTRACT_DIR=\"$TMPDIR/proot-extract\"\n" +
+                "        rm -rf \"$EXTRACT_DIR\"\n" +
+                "        mkdir -p \"$EXTRACT_DIR\"\n" +
+                "        # dpkg-deb extracts to com.termux paths; we remap to app.botdrop\n" +
+                "        dpkg-deb -x \"$PROOT_DEB\" \"$EXTRACT_DIR\" 2>&1 | tee -a \"$LOGFILE\"\n" +
+                "        if [ -d \"$EXTRACT_DIR/data/data/com.termux/files/usr\" ]; then\n" +
+                "            cp -r \"$EXTRACT_DIR/data/data/com.termux/files/usr/\"* \"$PREFIX/\" 2>&1 | tee -a \"$LOGFILE\"\n" +
+                "            echo 'proot-distro files installed to $PREFIX'\n" +
+                "        else\n" +
+                "            echo 'WARNING: unexpected deb layout, trying apt fallback'\n" +
+                "            DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends proot-distro 2>&1 | tee -a \"$LOGFILE\" || true\n" +
+                "        fi\n" +
+                "        rm -rf \"$EXTRACT_DIR\"\n" +
+                "    else\n" +
+                "        echo 'WARNING: proot-distro deb download failed, trying apt fallback'\n" +
+                "        DEBIAN_FRONTEND=noninteractive apt install -y --no-install-recommends proot-distro 2>&1 | tee -a \"$LOGFILE\" || true\n" +
+                "    fi\n" +
+                "    rm -f \"$PROOT_DEB\"\n" +
+                "fi\n" +
+                "if ! command -v proot-distro >/dev/null 2>&1; then\n" +
+                "    echo \"BOTDROP_ERROR:proot-distro installation failed\"\n" +
                 "    exit 1\n" +
                 "fi\n" +
-                "echo \"BOTDROP_INFO:Node $NODE_V, npm $NPM_V\"\n" +
+                "# Fix ALL hardcoded /data/data/com.termux paths in proot-distro files.\n" +
+                "# The official deb is built for com.termux but we run as app.botdrop.\n" +
+                "# We must fix shebangs AND internal path references in every script.\n" +
+                "PROOT_DISTRO_FILES=$(find \"$PREFIX/bin\" \"$PREFIX/libexec\" \"$PREFIX/etc/proot-distro\" \"$PREFIX/share/proot-distro\" -type f 2>/dev/null || true)\n" +
+                "for f in $PROOT_DISTRO_FILES; do\n" +
+                "    if head -1 \"$f\" 2>/dev/null | grep -q '^#!/data/data/com.termux/'; then\n" +
+                "        sed -i '1s|#!/data/data/com\\.termux/files/usr|#!'\"$PREFIX\"'|' \"$f\"\n" +
+                "        echo \"Fixed shebang in $(basename $f)\"\n" +
+                "    fi\n" +
+                "    # Replace all internal hardcoded com.termux paths with app.botdrop paths\n" +
+                "    if grep -q '/data/data/com\\.termux/' \"$f\" 2>/dev/null; then\n" +
+                "        sed -i 's|/data/data/com\\.termux/files/usr|'\"$PREFIX\"'|g' \"$f\"\n" +
+                "        echo \"Fixed paths in $(basename $f)\"\n" +
+                "    fi\n" +
+                "done\n" +
+                "# Fix cpu_arch unbound variable in proot-distro script (set -u at top, then $cpu_arch used without default)\n" +
+                "# Add default cpu_arch=${cpu_arch:-$(uname -m)} right after any 'set -u' line\n" +
+                "if [ -f \"$PREFIX/bin/proot-distro\" ]; then\n" +
+                "    if ! grep -q \"cpu_arch=\\${cpu_arch:-\" \"$PREFIX/bin/proot-distro\" 2>/dev/null; then\n" +
+                "        sed -i '/^set -u$/a cpu_arch=${cpu_arch:-$(uname -m)}' \"$PREFIX/bin/proot-distro\"\n" +
+                "        echo \"Fixed cpu_arch default in proot-distro\"\n" +
+                "    fi\n" +
+                "fi\n" +
+                "BS_ZIP=\"$PREFIX/var/lib/bootstrap-aarch64.zip\"\n" +
+                "if [ -f \"$BS_ZIP\" ]; then\n" +
+                "    echo 'Restoring proot binaries from bootstrap zip...'\n" +
+                "    mkdir -p \"$TMPDIR/_bs\"\n" +
+                "    unzip -oq \"$BS_ZIP\" 'bin/proot' 'bin/proot-distro' 'libexec/proot/loader' 'libexec/proot/loader32' -d \"$TMPDIR/_bs\" 2>/dev/null || true\n" +
+                "    [ -f \"$TMPDIR/_bs/bin/proot\" ] && cp \"$TMPDIR/_bs/bin/proot\" \"$PREFIX/bin/proot\" && chmod 700 \"$PREFIX/bin/proot\" && echo 'Restored proot binary'\n" +
+                "    [ -f \"$TMPDIR/_bs/libexec/proot/loader\" ] && mkdir -p \"$PREFIX/libexec/proot\" && cp \"$TMPDIR/_bs/libexec/proot/loader\" \"$PREFIX/libexec/proot/\" && chmod 700 \"$PREFIX/libexec/proot/loader\" && echo 'Restored libexec/proot/loader'\n" +
+                "    [ -f \"$TMPDIR/_bs/libexec/proot/loader32\" ] && cp \"$TMPDIR/_bs/libexec/proot/loader32\" \"$PREFIX/libexec/proot/\" && chmod 700 \"$PREFIX/libexec/proot/loader32\" && echo 'Restored libexec/proot/loader32'\n" +
+                "    rm -rf \"$TMPDIR/_bs\"\n" +
+                "else\n" +
+                "    echo 'WARNING: bootstrap zip not found, cannot restore proot binaries'\n" +
+                "fi\n" +
+                "# Create symlink bridge for any remaining /data/data/com.termux hardcoded refs.\n" +
+                "# This is a safety net: even after sed fixes, some proot-distro plugins or\n" +
+                "# sub-scripts may still reference /data/data/com.termux paths internally.\n" +
+                "# On non-rooted devices this may fail silently (SELinux / app sandbox).\n" +
+                "# That's OK because the sed path-rewrite above is the primary fix.\n" +
+                "COMTERMUX_BASE='/data/data/com.termux/files/usr'\n" +
+                "if mkdir -p \"$COMTERMUX_BASE/bin\" \"$COMTERMUX_BASE/libexec\" \"$COMTERMUX_BASE/etc\" 2>/dev/null; then\n" +
+                "    ln -sfn \"$PREFIX/bin/bash\"         \"$COMTERMUX_BASE/bin/bash\"         2>/dev/null || true\n" +
+                "    ln -sfn \"$PREFIX/bin/proot\"         \"$COMTERMUX_BASE/bin/proot\"         2>/dev/null || true\n" +
+                "    ln -sfn \"$PREFIX/bin/proot-distro\"  \"$COMTERMUX_BASE/bin/proot-distro\"  2>/dev/null || true\n" +
+                "    ln -sfn \"$PREFIX/libexec/proot\"     \"$COMTERMUX_BASE/libexec/proot\"     2>/dev/null || true\n" +
+                "    if [ -d \"$PREFIX/etc/proot-distro\" ]; then\n" +
+                "        ln -sfn \"$PREFIX/etc/proot-distro\" \"$COMTERMUX_BASE/etc/proot-distro\" 2>/dev/null || true\n" +
+                "    fi\n" +
+                "    echo 'Created /data/data/com.termux symlink bridge'\n" +
+                "else\n" +
+                "    echo 'WARNING: Cannot create /data/data/com.termux symlink bridge (no permission)'\n" +
+                "    echo 'Relying on sed path-rewrite fix instead'\n" +
+                "fi\n" +
                 "echo \"BOTDROP_STEP:1:DONE\"\n\n" +
-                buildOpenclawInstallScriptBody(openclawVersion, oldSpaceMb);
+                "# Step 2: Extract Ubuntu rootfs using proot-distro's cached download.\n" +
+                "# proot-distro install ubuntu fails during post-install on Android,\n" +
+                "# so we use the cached rootfs tarball and extract it manually.\n" +
+                "# Rootfs must go in internal storage (external storage doesn't support symlinks).\n" +
+                "echo \"BOTDROP_STEP:2:START:Installing Ubuntu rootfs\"\n" +
+                "ROOTFS_PARENT=\"$PREFIX/var/lib/proot-distro/installed-rootfs\"\n" +
+                "ROOTFS_DIR=\"$ROOTFS_PARENT/ubuntu\"\n" +
+                "# The tarball extracts to a subdirectory 'ubuntu-fs/' inside ROOTFS_DIR.\n" +
+                "# proot -r expects the rootfs at ROOTFS_DIR directly, so we track the actual path.\n" +
+                "ROOTFS_ACTUAL=\"$ROOTFS_DIR/ubuntu-fs\"\n" +
+                "ROOTFS_MARKER=\"$ROOTFS_DIR/.botdrop-rootfs-ready\"\n" +
+                "# Check if rootfs needs restructure: tar extracts to ubuntu-fs/ subdirectory,\n" +
+                "# but proot-distro expects rootfs directly at ROOTFS_DIR (ubuntu/).\n" +
+                "# If ubuntu-fs/ still exists, restructure is needed even with marker present.\n" +
+                "NEEDS_RESTRC=0\n" +
+                "if [ -f \"$ROOTFS_MARKER\" ] && [ ! -d \"$ROOTFS_ACTUAL\" ]; then\n" +
+                "    echo \"BOTDROP_INFO:Ubuntu rootfs already installed, skipping...\"\n" +
+                "elif [ -d \"$ROOTFS_ACTUAL\" ]; then\n" +
+                "    # Rootfs at wrong nesting level (ubuntu-fs/ exists) - restructure needed\n" +
+                "    echo \"BOTDROP_INFO:Restructuring existing rootfs (ubuntu-fs/ -> ubuntu/)...\"\n" +
+                "    cp -r \"$ROOTFS_ACTUAL/.\" \"$ROOTFS_DIR/\"\n" +
+                "    rm -rf \"$ROOTFS_ACTUAL\"\n" +
+                "    echo \"BOTDROP_INFO:Rootfs restructured successfully.\"\n" +
+                "    touch \"$ROOTFS_MARKER\"\n" +
+                "else\n" +
+                "    # === Download Ubuntu rootfs (3-tier fallback) ===\n" +
+                "    # Clean up old rootfs cache in internal storage to free space\n" +
+                "    rm -rf \"$PREFIX/var/lib/proot-distro/cache/ubuntu22_openclaw.tar.gz\" 2>/dev/null\n" +
+                "    rm -rf \"$PREFIX/var/lib/proot-distro/cache/ubuntu-rootfs.tar.xz\" 2>/dev/null\n" +
+                "    rm -rf \"$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu\" 2>/dev/null\n" +
+                "    CACHE_TAR=\"\"\n" +
+                "    # Tier 1: Use tar.gz directly from device storage (no copy needed)\n" +
+                "    LOCAL_SRC=\"/storage/emulated/0/claw-apk/ubuntu22_openclaw.tar.gz\"\n" +
+                "    if [ -f \"$LOCAL_SRC\" ]; then\n" +
+                "        CACHE_TAR=\"$LOCAL_SRC\"\n" +
+                "        echo \"BOTDROP_INFO:Using local rootfs: $CACHE_TAR\"\n" +
+                "    fi\n" +
+                "    # Tier 2: Check previously cached local rootfs\n" +
+                "    LOCAL_DST=\"/storage/emulated/0/botdrop-rootfs/ubuntu22_openclaw.tar.gz\"\n" +
+                "    if [ -z \"$CACHE_TAR\" ] && [ -f \"$LOCAL_DST\" ]; then\n" +
+                "        CACHE_TAR=\"$LOCAL_DST\"\n" +
+                "        echo \"BOTDROP_INFO:Using cached local rootfs: $CACHE_TAR\"\n" +
+                "    fi\n" +
+                "    # Tier 3: Download from GitHub\n" +
+                "    if [ -z \"$CACHE_TAR\" ]; then\n" +
+                "        echo \"BOTDROP_INFO:Downloading Ubuntu rootfs from GitHub...\"\n" +
+                "        mkdir -p \"$PREFIX/var/lib/proot-distro/cache\"\n" +
+                "        GITHUB_TAR=\"$PREFIX/var/lib/proot-distro/cache/ubuntu-rootfs.tar.xz\"\n" +
+                "        curl -L --progress-bar \\\n" +
+                "            'https://github.com/TermuxCHN/rootfs/releases/download/ubuntu2204/rootfs.tar.xz' \\\n" +
+                "            -o \"$GITHUB_TAR\" 2>&1 | tee -a \"$LOGFILE\"\n" +
+                "        if [ -f \"$GITHUB_TAR\" ] && [ $(wc -c < \"$GITHUB_TAR\") -gt 10485760 ]; then\n" +
+                "            CACHE_TAR=\"$GITHUB_TAR\"\n" +
+                "        else\n" +
+                "            echo \"BOTDROP_ERROR:Ubuntu rootfs download failed\"\n" +
+                "            exit 1\n" +
+                "        fi\n" +
+                "    fi\n" +
+                "    # === Extract rootfs to external storage ===\n" +
+                "    mkdir -p \"$ROOTFS_DIR\"\n" +
+                "    rm -rf \"$ROOTFS_ACTUAL\"\n" +
+                "    echo \"BOTDROP_INFO:Extracting Ubuntu rootfs (this may take a while)...\"\n" +
+                "    # ubuntu22_openclaw.tar.gz extracts as ./ (root), github tar.xz extracts as ubuntu-fs/\n" +
+                "    if echo \"$CACHE_TAR\" | grep -q 'openclaw'; then\n" +
+                "        # Complete rootfs: extracts directly into ROOTFS_DIR\n" +
+                "        tar -xzf \"$CACHE_TAR\" -C \"$ROOTFS_DIR\" --checkpoint=1000 --checkpoint-action=echo=\"Extracting...\" 2>&1 | tee -a \"$LOGFILE\"\n" +
+                "        # Verify key binary exists\n" +
+                "        if [ -f \"$ROOTFS_DIR/usr/bin/env\" ]; then\n" +
+                "            echo \"BOTDROP_INFO:Complete rootfs extracted (with /usr/bin/env).\"\n" +
+                "        else\n" +
+                "            echo \"BOTDROP_WARN:Rootfs missing /usr/bin/env, may be incomplete.\"\n" +
+                "        fi\n" +
+                "    else\n" +
+                "        # GitHub tar.xz: extracts into ubuntu-fs/ subdirectory\n" +
+                "        tar -xf \"$CACHE_TAR\" -C \"$ROOTFS_DIR\" --checkpoint=1000 --checkpoint-action=echo=\"Extracting...\" 2>&1 | tee -a \"$LOGFILE\"\n" +
+                "        if [ -d \"$ROOTFS_ACTUAL\" ]; then\n" +
+                "            echo \"BOTDROP_INFO:Restructuring rootfs (ubuntu-fs/ -> ubuntu/)...\"\n" +
+                "            cp -r \"$ROOTFS_ACTUAL/.\" \"$ROOTFS_DIR/\"\n" +
+                "            rm -rf \"$ROOTFS_ACTUAL\"\n" +
+                "        else\n" +
+                "            echo \"BOTDROP_ERROR:Rootfs extraction failed - ubuntu-fs/ not found\"\n" +
+                "            exit 1\n" +
+                "        fi\n" +
+                "    fi\n" +
+                "    touch \"$ROOTFS_MARKER\"\n" +
+                "    echo \"BOTDROP_INFO:Ubuntu rootfs extracted successfully.\"\n" +
+                "fi\n" +
+                "echo \"BOTDROP_STEP:2:DONE\"\n\n" +
+                "# Step 3: Install AstrBot inside Ubuntu\n" +
+                "echo \"BOTDROP_STEP:3:START:Installing AstrBot in Ubuntu\"\n" +
+                "# Write AstrBot install script to be executed inside Ubuntu\n" +
+                "AstrBotScript=\"$PREFIX/tmp/astrbot_install.sh\"\n" +
+                "cat > \"$AstrBotScript\" << 'ASTRBOT_EOF'\n" +
+                "set -e\n" +
+                "export DEBIAN_FRONTEND=noninteractive\n" +
+                "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\n" +
+                "# Fix apt/dpkg metadata if missing (happens when rootfs is from openclaw tarball)\n" +
+                "mkdir -p /var/lib/apt/lists/partial /var/lib/dpkg\n" +
+                "if [ ! -f /var/lib/dpkg/status ]; then\n" +
+                "    touch /var/lib/dpkg/status\n" +
+                "fi\n" +
+                "apt update && apt install -y python3 python3-pip git curl || true\n" +
+                "pip install uv 2>&1 | tail -3\n" +
+                "if [ ! -d \"/root/astrbot\" ]; then\n" +
+                "    git clone https://github.com/AstrBotDevs/AstrBot.git /root/astrbot 2>&1 | tail -5\n" +
+                "fi\n" +
+                "cd /root/astrbot\n" +
+                "uv run main.py --version 2>&1 | head -3 || true\n" +
+                "ASTRBOT_EOF\n" +
+                "# Copy script into Ubuntu rootfs /tmp\n" +
+                "UbuntuRootfs=\"$PREFIX/var/lib/proot-distro/installed-rootfs/ubuntu\"\n" +
+                "mkdir -p \"$UbuntuRootfs/tmp\"\n" +
+                "cp \"$AstrBotScript\" \"$UbuntuRootfs/tmp/astrbot_install.sh\"\n" +
+                "chmod 755 \"$UbuntuRootfs/tmp/astrbot_install.sh\"\n" +
+                "rm -f \"$AstrBotScript\"\n" +
+                "echo \"BOTDROP_INFO:Entering Ubuntu via proot-distro login...\"\n" +
+                "proot-distro login ubuntu -- /bin/bash /tmp/astrbot_install.sh 2>&1 | tee -a \"$LOGFILE\"\n" +
+                "# Verify AstrBot was installed\n" +
+                "if ! test -d \"$UbuntuRootfs/root/astrbot\" 2>/dev/null; then\n" +
+                "    echo \"BOTDROP_ERROR:AstrBot was not installed successfully\"\n" +
+                "    exit 1\n" +
+                "fi\n" +
+                "echo \"BOTDROP_STEP:3:DONE\"\n\n" +
+                "touch \"$MARKER\"\n" +
+                "echo \"BOTDROP_COMPLETE\"\n";
 
             try (FileOutputStream fos = new FileOutputStream(installScript)) {
                 fos.write(installContent.getBytes());
@@ -493,15 +752,7 @@ public final class TermuxInstaller {
             //noinspection OctalInteger
             Os.chmod(installScript.getAbsolutePath(), 0755);
 
-            File installQqbotScript = new File(botdropDir, "install-qqbot-offline.sh");
-            try (FileOutputStream fos = new FileOutputStream(installQqbotScript)) {
-                fos.write(BundledOpenclawUtils.buildOfflineQqbotInstallScriptBody().getBytes());
-            }
-            //noinspection OctalInteger
-            Os.chmod(installQqbotScript.getAbsolutePath(), 0755);
-
             // --- 2. Create profile.d env script ---
-
             File profileDir = new File(TERMUX_PREFIX_DIR_PATH + "/etc/profile.d");
             if (!profileDir.exists()) {
                 profileDir.mkdirs();
@@ -512,20 +763,14 @@ public final class TermuxInstaller {
                 "# BotDrop environment setup\n" +
                 "export TMPDIR=$PREFIX/tmp\n" +
                 "mkdir -p $TMPDIR 2>/dev/null\n" +
-                "# Enable Node.js to find globally-installed native addons (e.g. @img/sharp-android-arm64)\n" +
-                "export NODE_PATH=$PREFIX/lib/node_modules\n" +
-                OpenclawVersionUtils.buildNodeOptionsExportCommand(oldSpaceMb) +
-                "\n" +
                 buildBotDropAptSourceScript() +
-                "# `openclaw` is installed as a wrapper that already runs under `termux-chroot`.\n" +
-                "# Avoid nesting proot/termux-chroot which can make commands extremely slow.\n\n" +
                 "# Auto-start sshd if not running\n" +
                 "if ! pgrep -x sshd >/dev/null 2>&1; then\n" +
                 "    sshd 2>/dev/null\n" +
                 "fi\n\n" +
                 "# Run install if not done yet\n" +
                 "if [ ! -f \"$HOME/.botdrop_installed\" ]; then\n" +
-                "    echo \"\\U0001F4A7 Setting up BotDrop...\"\n" +
+                "    echo \"\\U0001F4A7 Setting up BotDrop AstrBot...\"\n" +
                 "    bash $PREFIX/share/botdrop/install.sh\n" +
                 "fi\n";
 
@@ -545,143 +790,22 @@ public final class TermuxInstaller {
     private static String buildBotDropAptSourceScript() {
         return
             "mkdir -p " + BOTDROP_APT_SOURCES_LIST_D + "\n" +
-            "printf '%s\\n' '" + BOTDROP_APT_SOURCE_LINE + "' > " + BOTDROP_APT_LIST_FILE + "\n" +
-            "printf '%s\\n' '" + BOTDROP_GITLAB_APT_SOURCE_LINE + "' >> " + BOTDROP_APT_LIST_FILE + "\n" +
-            "cp " + BOTDROP_APT_LIST_FILE + " " + BOTDROP_APT_SOURCES_LIST + "\n" +
+            "# Write BotDrop custom APT sources to sources.list.d/botdrop.list\n" +
+            "printf '%s\\n' \"" + BOTDROP_APT_SOURCE_LINE + "\" > " + BOTDROP_APT_LIST_FILE + "\n" +
+            "printf '%s\\n' \"" + BOTDROP_GITLAB_APT_SOURCE_LINE + "\" >> " + BOTDROP_APT_LIST_FILE + "\n" +
+            "# Keep official Termux repo for proot-distro (only available there)\n" +
+            "# but BotDrop source will be prioritized for common packages\n" +
+            "if ! grep -qF 'packages.termux.dev' " + BOTDROP_APT_SOURCES_LIST + " 2>/dev/null; then\n" +
+            "    printf '%s\\n' 'deb https://packages.termux.dev/apt/termux-main/ stable main' > " + BOTDROP_APT_SOURCES_LIST + "\n" +
+            "fi\n" +
+            "# Remove any stale .list files from sources.list.d (except botdrop.list)\n" +
             "for f in " + BOTDROP_APT_SOURCES_LIST_D + "/*.list; do\n" +
             "    if [ -f \"$f\" ] && [ \"$f\" != \"" + BOTDROP_APT_LIST_FILE + "\" ]; then\n" +
             "        rm -f \"$f\"\n" +
             "    fi\n" +
             "done\n";
     }
-
-    private static String buildOpenclawInstallScriptBody(String openclawVersion, int oldSpaceMb) {
-        String requestedInstallSpec = OpenclawVersionUtils.normalizeInstallVersion(openclawVersion);
-        if (requestedInstallSpec == null) {
-            requestedInstallSpec = "openclaw@latest";
-        }
-
-        String bundledWrapperNodePath = BundledOpenclawUtils.STAGED_CURRENT_RUNTIME_LINK
-            + "/node_modules:$PREFIX/lib/node_modules";
-
-        return
-            "echo \"BOTDROP_STEP:2:START:Installing OpenClaw\"\n" +
-            "REQUESTED_INSTALL_SPEC='" + requestedInstallSpec + "'\n" +
-            "OFFLINE_ROOT=\"" + BundledOpenclawUtils.STAGED_ROOT + "\"\n" +
-            "OFFLINE_MANIFEST=\"$OFFLINE_ROOT/manifest.properties\"\n" +
-            "OFFLINE_RUNTIME_ROOT=\"" + BundledOpenclawUtils.STAGED_RUNTIME_ROOT + "\"\n" +
-            "OFFLINE_CURRENT_LINK=\"" + BundledOpenclawUtils.STAGED_CURRENT_RUNTIME_LINK + "\"\n" +
-            "GLOBAL_NODE_MODULES_ROOT=\"" + BundledOpenclawUtils.GLOBAL_NODE_MODULES_ROOT + "\"\n" +
-            "if [ ! -f \"$OFFLINE_MANIFEST\" ]; then\n" +
-            "    echo \"BOTDROP_ERROR:Bundled OpenClaw assets are missing from the APK\"\n" +
-            "    exit 1\n" +
-            "fi\n" +
-            ". \"$OFFLINE_MANIFEST\"\n" +
-            "USE_BUNDLED_OPENCLAW=0\n" +
-            "if [ -n \"$installSpec\" ] && [ -f \"$OFFLINE_ROOT/${runtimeArchive:-"
-                + BundledOpenclawUtils.DEFAULT_RUNTIME_ARCHIVE_NAME + "}\" ]; then\n" +
-            "    if [ \"$REQUESTED_INSTALL_SPEC\" = \"openclaw@latest\" ] || [ \"$REQUESTED_INSTALL_SPEC\" = \"$installSpec\" ]; then\n" +
-                "        USE_BUNDLED_OPENCLAW=1\n" +
-            "    fi\n" +
-            "fi\n" +
-            "if [ \"$USE_BUNDLED_OPENCLAW\" = \"1\" ]; then\n" +
-            "    BUNDLED_VERSION=\"${version:-" + requestedInstallSpec.replace("openclaw@", "") + "}\"\n" +
-            "    BUNDLED_RUNTIME_ARCHIVE=\"${runtimeArchive:-" + BundledOpenclawUtils.DEFAULT_RUNTIME_ARCHIVE_NAME + "}\"\n" +
-            "    TARGET_DIR=\"$OFFLINE_RUNTIME_ROOT/$BUNDLED_VERSION\"\n" +
-            "    TMP_DIR=\"$TARGET_DIR.tmp\"\n" +
-            "    rm -rf \"$TMP_DIR\"\n" +
-            "    mkdir -p \"$TMP_DIR\"\n" +
-            "    case \"$BUNDLED_RUNTIME_ARCHIVE\" in\n" +
-            "      *.tar.gz|*.tgz) tar -xzf \"$OFFLINE_ROOT/$BUNDLED_RUNTIME_ARCHIVE\" -C \"$TMP_DIR\" ;;\n" +
-            "      *) tar -xf \"$OFFLINE_ROOT/$BUNDLED_RUNTIME_ARCHIVE\" -C \"$TMP_DIR\" ;;\n" +
-            "    esac\n" +
-            "    EXTRACTED_NODE_MODULES=\"\"\n" +
-            "    for CANDIDATE in \\\n" +
-            "      \"$TMP_DIR/node_modules\" \\\n" +
-            "      \"$TMP_DIR/node_modules-pruned\" \\\n" +
-            "      \"$TMP_DIR/package/node_modules\" \\\n" +
-            "      \"$TMP_DIR/bundle/node_modules\"; do\n" +
-            "      if [ -d \"$CANDIDATE/openclaw\" ]; then\n" +
-            "        EXTRACTED_NODE_MODULES=\"$CANDIDATE\"\n" +
-            "        break\n" +
-            "      fi\n" +
-            "    done\n" +
-            "    if [ -z \"$EXTRACTED_NODE_MODULES\" ]; then\n" +
-            "      MAYBE_NODE_MODULES=$(find \"$TMP_DIR\" -mindepth 1 -maxdepth 3 -type d -name node_modules | head -n 1)\n" +
-            "      if [ -n \"$MAYBE_NODE_MODULES\" ] && [ -d \"$MAYBE_NODE_MODULES/openclaw\" ]; then\n" +
-            "        EXTRACTED_NODE_MODULES=\"$MAYBE_NODE_MODULES\"\n" +
-            "      fi\n" +
-            "    fi\n" +
-            "    if [ -z \"$EXTRACTED_NODE_MODULES\" ]; then\n" +
-            "      echo \"BOTDROP_ERROR:Bundled OpenClaw archive missing node_modules/openclaw\"\n" +
-            "      rm -rf \"$TMP_DIR\"\n" +
-            "      exit 1\n" +
-            "    fi\n" +
-            "    rm -rf \"$TARGET_DIR\"\n" +
-            "    mkdir -p \"$TARGET_DIR\"\n" +
-            "    mv \"$EXTRACTED_NODE_MODULES\" \"$TARGET_DIR/node_modules\"\n" +
-            "    rm -rf \"$TMP_DIR\"\n" +
-            "    ln -sfn \"$TARGET_DIR\" \"$OFFLINE_CURRENT_LINK\"\n" +
-            "    mkdir -p \"$GLOBAL_NODE_MODULES_ROOT\"\n" +
-            "    for entry in \"$OFFLINE_CURRENT_LINK/node_modules\"/*; do\n" +
-            "      [ -e \"$entry\" ] || continue\n" +
-            "      entry_name=\"$(basename \"$entry\")\"\n" +
-            "      ln -sfn \"$entry\" \"$GLOBAL_NODE_MODULES_ROOT/$entry_name\"\n" +
-            "    done\n" +
-            "    cat > $PREFIX/bin/openclaw <<'BOTDROP_OPENCLAW_WRAPPER'\n" +
-            "#!" + com.termux.shared.termux.TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + "/bash\n" +
-            "PREFIX=\"$(cd \"$(dirname \"$0\")/..\" && pwd)\"\n" +
-            "RUNTIME_ROOT=\"$PREFIX/share/botdrop/openclaw-runtime/current\"\n" +
-            OpenclawVersionUtils.buildOpenclawWrapperBody(
-                "$RUNTIME_ROOT/node_modules/openclaw",
-                bundledWrapperNodePath,
-                oldSpaceMb
-            ) +
-            "BOTDROP_OPENCLAW_WRAPPER\n" +
-            "    chmod 755 $PREFIX/bin/openclaw\n" +
-            "    KOFFI_DIR=\"$OFFLINE_CURRENT_LINK/node_modules/openclaw/node_modules/koffi\"\n" +
-            "    KOFFI_INDEX=\"$KOFFI_DIR/index.js\"\n" +
-            "    if [ -d \"$KOFFI_DIR\" ] && [ -f \"$KOFFI_INDEX\" ]; then\n" +
-            "      if [ ! -f \"$KOFFI_INDEX.orig\" ]; then\n" +
-            "        cp \"$KOFFI_INDEX\" \"$KOFFI_INDEX.orig\"\n" +
-            "      fi\n" +
-            "      cat > \"$KOFFI_INDEX\" <<'BOTDROP_KOFFI_MOCK'\n" +
-            "module.exports = {\n" +
-            "  load() {\n" +
-            "    throw new Error(\"koffi native module not available on this platform\");\n" +
-            "  }\n" +
-            "};\n" +
-            "BOTDROP_KOFFI_MOCK\n" +
-            "    fi\n" +
-            "    echo \"BOTDROP_STEP:2:DONE\"\n" +
-            "    touch \"$MARKER\"\n" +
-            "    echo \"BOTDROP_COMPLETE\"\n" +
-            "else\n" +
-            "    echo \"BOTDROP_ERROR:Requested $REQUESTED_INSTALL_SPEC is not available in the bundled OpenClaw runtime ($installSpec)\"\n" +
-            "    exit 1\n" +
-            "fi\n";
-    }
-
-    private static long getDeviceTotalRamMb(Context context) {
-        try {
-            ActivityManager activityManager =
-                (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);
-            if (activityManager == null) {
-                Logger.logWarn(LOG_TAG, "ActivityManager unavailable, using fallback heap size");
-                return 0L;
-            }
-
-            ActivityManager.MemoryInfo memoryInfo = new ActivityManager.MemoryInfo();
-            activityManager.getMemoryInfo(memoryInfo);
-            if (memoryInfo.totalMem <= 0) {
-                return 0L;
-            }
-
-            return memoryInfo.totalMem / (1024L * 1024L);
-        } catch (Exception e) {
-            Logger.logWarn(LOG_TAG, "Failed to read total RAM, using fallback heap size: " + e.getMessage());
-            return 0L;
-        }
-    }
-
 }
+
+
+

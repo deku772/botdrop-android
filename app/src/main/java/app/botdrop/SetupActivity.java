@@ -43,11 +43,10 @@ import org.json.JSONObject;
 import com.termux.shared.termux.TermuxConstants;
 
 /**
- * Setup wizard with 4 steps:
- * Step 0 (STEP_AGENT_SELECT): Agent Selection
- * Step 1 (STEP_INSTALL): Install openclaw
- * Step 2 (STEP_API_KEY): Choose AI + API Key
- * Step 3 (STEP_CHANNEL): Telegram Config
+ * Setup wizard with 3 steps:
+ * Step 0 (STEP_INSTALL): Install AstrBot
+ * Step 1 (STEP_API_KEY): Configure AI via AstrBot WebUI
+ * Step 2 (STEP_CHANNEL): Configure channels via AstrBot WebUI
  */
 
 public class SetupActivity extends AppCompatActivity {
@@ -79,12 +78,11 @@ public class SetupActivity extends AppCompatActivity {
         boolean handleNext();
     }
 
-    // Step constants (Agent selection first, then install)
-    public static final int STEP_AGENT_SELECT = 0;  // Step 1: Agent Selection
-    public static final int STEP_INSTALL = 1;       // Step 2: Install openclaw
-    public static final int STEP_API_KEY = 2;       // Step 3: Choose AI + API Key
-    public static final int STEP_CHANNEL = 3;       // Step 4: Telegram config
-    private static final int STEP_COUNT = 4;
+    // Step constants (simplified for AstrBot only)
+    public static final int STEP_INSTALL = 0;       // Step 1: Install AstrBot
+    public static final int STEP_API_KEY = 1;       // Step 2: Configure AI (AstrBot WebUI)
+    public static final int STEP_CHANNEL = 2;       // Step 3: Configure channels (AstrBot WebUI)
+    private static final int STEP_COUNT = 3;
 
     // Intent extra for starting at specific step
     public static final String EXTRA_START_STEP = "start_step";
@@ -114,7 +112,7 @@ public class SetupActivity extends AppCompatActivity {
         mViewPager.setUserInputEnabled(false); // Disable swipe, only programmatic navigation
 
         // Start at specified step
-        int startStep = getIntent().getIntExtra(EXTRA_START_STEP, STEP_AGENT_SELECT);
+        int startStep = getIntent().getIntExtra(EXTRA_START_STEP, STEP_INSTALL);
         mViewPager.setCurrentItem(startStep, false);
         mViewPager.registerOnPageChangeCallback(new ViewPager2.OnPageChangeCallback() {
             @Override
@@ -167,8 +165,6 @@ public class SetupActivity extends AppCompatActivity {
 
     private String getAnalyticsStepName(int step) {
         switch (step) {
-            case STEP_AGENT_SELECT:
-                return "agent_select";
             case STEP_INSTALL:
                 return "install";
             case STEP_API_KEY:
@@ -822,8 +818,6 @@ public class SetupActivity extends AppCompatActivity {
         @Override
         public Fragment createFragment(int position) {
             switch (position) {
-                case STEP_AGENT_SELECT:
-                    return new AgentSelectionFragment();
                 case STEP_INSTALL:
                     return new InstallFragment();
                 case STEP_API_KEY:

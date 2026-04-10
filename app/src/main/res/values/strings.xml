@@ -354,6 +354,8 @@
     <string name="botdrop_permissions_intro">BotDrop needs two permissions to keep your AI gateway running in the background.</string>
     <string name="botdrop_notifications">Notifications</string>
     <string name="botdrop_notifications_hint">Show gateway alerts and status</string>
+    <string name="botdrop_storage_access">Storage Access</string>
+    <string name="botdrop_storage_access_hint">Required for proot to manage Linux files and data</string>
     <string name="botdrop_enabled">Enabled</string>
     <string name="botdrop_allow">Allow</string>
     <string name="botdrop_granted">Granted</string>
@@ -388,7 +390,7 @@
     <string name="botdrop_search_models">Search models...</string>
     <string name="botdrop_loading_models">Loading models...</string>
     <string name="botdrop_retry">Retry</string>
-    <string name="botdrop_openclaw_gateway_log">OpenClaw Gateway Log</string>
+    <string name="botdrop_openclaw_gateway_log">AstrBot Log</string>
     <string name="botdrop_copy">Copy</string>
     <string name="botdrop_stopping_gateway">Stopping gateway</string>
     <string name="botdrop_installing_update">Installing update</string>
@@ -397,9 +399,9 @@
     <string name="botdrop_refreshing_model_list">Refreshing model list</string>
     <string name="botdrop_may_take_a_few_minutes">This may take a few minutes</string>
     <string name="botdrop_choose_agent">Choose Your Agent</string>
-    <string name="botdrop_openclaw">OpenClaw</string>
-    <string name="botdrop_openclaw_desc">The AI that actually does things.</string>
-    <string name="botdrop_openclaw_site">openclaw.ai</string>
+    <string name="botdrop_openclaw">AstrBot</string>
+    <string name="botdrop_openclaw_desc">AI Bot with WebUI</string>
+    <string name="botdrop_openclaw_site">docs.astrbot.app</string>
     <string name="botdrop_install">Install</string>
     <string name="botdrop_settings">Settings</string>
     <string name="botdrop_settings_community">Community</string>
@@ -412,8 +414,8 @@
     <string name="botdrop_settings_docs_title">Docs</string>
     <string name="botdrop_settings_docs_desc">Read setup and usage guides</string>
     <string name="botdrop_app_version_label">BotDrop</string>
-    <string name="botdrop_openclaw_version_label">OpenClaw Version</string>
-    <string name="botdrop_openclaw_version_manager">OpenClaw version manager</string>
+    <string name="botdrop_openclaw_version_label">AstrBot Version</string>
+    <string name="botdrop_openclaw_version_manager">AstrBot version</string>
     <string name="botdrop_owliabot">OwliaBot</string>
     <string name="botdrop_owliabot_desc">A leaner, safer crypto-native OpenClaw.</string>
     <string name="botdrop_owliabot_site">owlia.bot</string>
@@ -466,7 +468,7 @@
     <string name="botdrop_environment_ready">Environment ready</string>
     <string name="botdrop_verifying_nodejs">Verifying Node.js</string>
     <string name="botdrop_setting_up_environment">Setting up environment...</string>
-    <string name="botdrop_installing_openclaw">Installing OpenClaw</string>
+    <string name="botdrop_installing_openclaw">Installing AstrBot</string>
     <string name="botdrop_takes_about_a_minute">This takes about a minute</string>
     <string name="botdrop_continue_arrow">Continue →</string>
     <string name="botdrop_model_badge">Model badge</string>
